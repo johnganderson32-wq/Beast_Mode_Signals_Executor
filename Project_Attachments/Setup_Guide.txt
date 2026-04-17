@@ -1,0 +1,388 @@
+================================================================================
+  BEAST MODE SIGNALS EXECUTOR — SETUP GUIDE
+  For: New traders joining the BEAST Mode signal group
+  Last Updated: 2026-04-17
+================================================================================
+
+This guide walks you through setting up the Beast Mode Signals Executor from
+scratch on a fresh machine. By the end, your machine will be receiving BEAST
+Mode alerts from TradingView and placing orders in your ProjectX account
+automatically.
+
+Total setup time: ~15 minutes.
+
+
+================================================================================
+PREREQUISITES
+================================================================================
+
+Before you begin, make sure you have the following:
+
+  1. A ProjectX account (TopstepX) with API access
+     - Your ProjectX username
+     - Your ProjectX API key (found in your TopstepX account settings)
+     - Your ProjectX account ID
+
+  2. Node.js installed (v18 or higher)
+     - Download: https://nodejs.org
+     - After install, verify:
+         node --version      → should show v18.x or higher
+         npm --version       → should show 9.x or higher
+
+  3. Git installed
+     - Download: https://git-scm.com/downloads
+     - After install, verify:
+         git --version
+
+  4. ngrok installed
+     - Download: https://ngrok.com/download
+     - Create a free ngrok account and run:
+         ngrok config add-authtoken YOUR_AUTH_TOKEN
+
+  5. TradingView account (free tier works, but Pro+ recommended for
+     webhook alerts and multiple alert slots)
+
+  6. GitHub access — you must have accepted the collaborator invite for:
+       johnganderson32-wq/Beast_Mode_Signals_Executor
+
+
+================================================================================
+STEP 1 — CLONE THE REPO
+================================================================================
+
+Open a terminal (CMD, PowerShell, or Terminal on Mac) and run:
+
+  git clone https://github.com/johnganderson32-wq/Beast_Mode_Signals_Executor.git
+  cd Beast_Mode_Signals_Executor
+
+You should now be in the project directory with all source files.
+
+
+================================================================================
+STEP 2 — INSTALL DEPENDENCIES
+================================================================================
+
+  npm install
+
+This downloads Express, Axios, and the other packages the executor needs.
+Should take 10-30 seconds. Watch for errors — if npm install fails, make
+sure Node.js is installed correctly (see Prerequisites).
+
+
+================================================================================
+STEP 3 — CONFIGURE YOUR ENVIRONMENT
+================================================================================
+
+Copy the example config to create your personal config:
+
+  Windows:    copy .env.example .env
+  Mac/Linux:  cp .env.example .env
+
+Now open .env in any text editor and fill in your values:
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ PORT=3100                                                         │
+  │ WEBHOOK_SECRET=                                                   │
+  │                                                                   │
+  │ PROJECTX_API_URL=https://gateway-rtc.main.topstepx.com/api       │
+  │ PROJECTX_USERNAME=your_username_here                              │
+  │ PROJECTX_API_KEY=your_api_key_here                                │
+  │                                                                   │
+  │ PROJECTX_ACCOUNT_ID=your_account_id_here                         │
+  │                                                                   │
+  │ NQ_CONTRACT_ID=CON.F.US.ENQ.M26                                  │
+  │ GC_CONTRACT_ID=CON.F.US.MGC.Q25                                  │
+  │                                                                   │
+  │ NQ_CONTRACTS=2                                                    │
+  │ GC_CONTRACTS=1                                                    │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  FIELD EXPLANATIONS:
+
+  PORT              Server port. Leave at 3100 unless you have a conflict.
+
+  WEBHOOK_SECRET    Optional. If set, incoming signals must include this
+                    value in the x-webhook-secret header. Leave blank to
+                    skip authentication (fine for personal use behind ngrok).
+
+  PROJECTX_API_URL  The ProjectX API base URL. Do not change unless
+                    instructed — the default is correct for TopstepX.
+
+  PROJECTX_USERNAME Your TopstepX login username.
+
+  PROJECTX_API_KEY  Your TopstepX API key. Found in your account settings
+                    under API Access. This is NOT your login password.
+
+  PROJECTX_ACCOUNT_ID
+                    Your trading account number. Found in the TopstepX
+                    dashboard or your account list. This is the account
+                    that will receive orders.
+
+  NQ_CONTRACT_ID    The NQ futures contract identifier. This changes every
+                    quarter. You will be notified when it rolls. Format:
+                      CON.F.US.ENQ.{MONTH_CODE}{YEAR}
+                    Month codes: H=Mar, M=Jun, U=Sep, Z=Dec
+
+  GC_CONTRACT_ID    Same as above but for Gold Micro (MGC). Only needed if
+                    BEAST Mode expands to GC in the future.
+
+  NQ_CONTRACTS      How many contracts per trade:
+                      1 = All contracts exit at TP1 (0.5R)
+                      2 = 1 contract exits at TP1, 1 runner held to target (1R)
+                      3+ = (qty-1) at TP1, 1 runner at target
+                    Recommended: 2 for the standard TP1 + runner setup.
+
+  GC_CONTRACTS      Same as NQ_CONTRACTS but for GC trades.
+
+  IMPORTANT: Do NOT commit your .env file to GitHub. It contains your
+  credentials. The .gitignore file already excludes it.
+
+
+================================================================================
+STEP 4 — START THE SERVER
+================================================================================
+
+  npm start
+
+You should see:
+
+  [beast-executor] Listening on http://localhost:3100
+  [beast-executor] Webhook endpoint: POST /webhook/signal
+
+If you see errors instead:
+  - "Cannot find module" → run npm install again
+  - "EADDRINUSE" → port 3100 is taken; change PORT in .env or close the
+    other process using that port
+  - Connection errors to ProjectX → check your username and API key
+
+Leave this terminal running. It is your live signal listener.
+
+
+================================================================================
+STEP 5 — VERIFY THE DASHBOARD
+================================================================================
+
+Open a browser and go to:
+
+  http://localhost:3100
+
+You should see the BEAST Mode Executor dashboard with:
+  - Analytics tab (empty — no trades yet)
+  - Trades tab (empty)
+  - Open tab (empty)
+
+If the page loads, your server is running correctly.
+
+
+================================================================================
+STEP 6 — START NGROK
+================================================================================
+
+Open a SECOND terminal window (keep the server running in the first) and run:
+
+  ngrok http 3100
+
+ngrok will display something like:
+
+  Forwarding  https://a1b2c3d4.ngrok-free.app → http://localhost:3100
+
+Copy the https:// URL. You will need it for the TradingView alert.
+
+IMPORTANT NOTES:
+  - Free ngrok sessions expire after ~2 hours. You'll need to restart
+    ngrok and update your TV alert URL when it expires.
+  - Paid ngrok plans give you a permanent URL (no expiration).
+  - If you close the ngrok terminal, the tunnel dies and signals
+    cannot reach your executor.
+
+
+================================================================================
+STEP 7 — ADD THE INDICATOR TO TRADINGVIEW
+================================================================================
+
+  1. Open TradingView and load a 1-minute NQ chart (NQ1! or MNQH2026, etc.)
+
+  2. Open the Pine Editor (bottom panel → Pine Editor tab)
+
+  3. Paste the BEAST Mode indicator code
+     (you will receive the Pine Script from the group owner)
+
+  4. Click "Add to Chart"
+
+  5. The indicator should appear on your chart showing:
+     - Macro zone boxes (M1 Opening / M2 Killzone / M3 Closing)
+     - Inside zone detection
+     - H1 candle H/L lines
+     - Signal arrows on breakout bars
+
+  6. Configure indicator settings (gear icon):
+     - Display tab: adjust colors and visibility as desired
+     - Filters tab: Set F defaults are pre-loaded:
+         Hour Gate: ON (08, 11, 13, 14, 16 ET)
+         Allow M3→M1: ON
+         Min rDist: 20 pts
+         Compression Filter: OFF
+     - Do not change filter settings unless instructed
+
+
+================================================================================
+STEP 8 — CREATE THE TRADINGVIEW ALERT
+================================================================================
+
+  1. Right-click on the chart → Add Alert
+     Or: click the Alerts icon (clock) in the right panel → Create Alert
+
+  2. Set the alert conditions:
+
+     Condition:    BEAST Mode
+     Trigger:      Any alert() function call
+
+  3. Set the notification:
+
+     Webhook URL:  Paste your ngrok URL + /webhook/signal
+                   Example: https://a1b2c3d4.ngrok-free.app/webhook/signal
+
+     IMPORTANT: The URL must end with /webhook/signal — that is the
+     endpoint the executor listens on.
+
+  4. Alert message:
+
+     LEAVE THE MESSAGE BOX EMPTY.
+     The indicator automatically generates the JSON payload.
+     If you type anything in the message box, it will overwrite the
+     indicator's payload and the executor will reject the signal.
+
+  5. Expiration:
+
+     Set to Open-ended (or the longest available on your TV plan).
+
+  6. Alert name:
+
+     "BEAST Mode" (or whatever you prefer — this is just a label)
+
+  7. Click Create.
+
+The alert should appear in your Alerts panel with a clock icon.
+It is now active and waiting for the next BEAST Mode signal.
+
+
+================================================================================
+STEP 9 — VERIFY EVERYTHING WORKS
+================================================================================
+
+SMOKE TEST (confirms server is alive and routing correctly):
+
+  Open a third terminal and run:
+
+    curl -X POST http://localhost:3100/webhook/signal ^
+      -H "Content-Type: application/json" ^
+      -d "{}"
+
+  Expected response:
+    {"status":"ignored","reason":"empty"}
+
+  If you get this response, the webhook endpoint is working.
+
+LIVE SIGNAL TEST:
+
+  Wait for the next BEAST Mode signal to fire on your chart. When it does:
+
+  1. Watch the server terminal for:
+       [webhook] BEAST bullish NQ  entry=...  SL=...  TP1=...  T=...
+       [projectx] Entry: bullish 2x NQ
+       [projectx] SL placed @ ...
+       [projectx] TP1 placed @ ...
+       [projectx] Target placed @ ...
+
+  2. Check your ProjectX account for the new orders
+
+  3. Check the dashboard at http://localhost:3100 → Trades tab
+     → You should see the new trade with all entry details
+
+  If you see [webhook] errors:
+    - "Missing field" → the TV alert message box was not left empty, or
+      the indicator is not the correct version
+    - "Unsupported action" → wrong indicator payload format
+    - "Invalid direction" → same as above
+
+  If you see [projectx] errors:
+    - "Authenticated" not showing → check PROJECTX_USERNAME and API_KEY
+    - "No contract ID" → check NQ_CONTRACT_ID in .env
+    - HTTP errors → check PROJECTX_API_URL is correct
+
+
+================================================================================
+STEP 10 — DAILY OPERATIONS (AFTER SETUP IS COMPLETE)
+================================================================================
+
+STARTING A SESSION:
+  Terminal 1:  cd Beast_Mode_Signals_Executor && npm start
+  Terminal 2:  ngrok http 3100
+  Browser:     http://localhost:3100 (dashboard)
+  TV:          Confirm alert is active (clock icon visible)
+
+DURING THE SESSION:
+  - Watch the server terminal for signal and order logs
+  - Dashboard auto-refreshes every 30 seconds
+
+ENDING A SESSION:
+  - Mark trade outcomes in the Trades tab BEFORE stopping the server
+    (the trade store resets on restart)
+  - Ctrl+C in both terminals to stop server and ngrok
+
+GETTING UPDATES:
+  When notified of an update:
+    git pull
+    (stop and restart npm start)
+  If new .env variables were added, add them to your .env first.
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+SERVER WON'T START:
+  - "Cannot find module" → run: npm install
+  - "EADDRINUSE port 3100" → another process is using port 3100
+      Windows: netstat -ano | findstr 3100   → find the PID → taskkill /PID xxxx /F
+      Mac:     lsof -i :3100                 → find the PID → kill -9 xxxx
+
+NGROK TUNNEL DIED:
+  - Free sessions expire. Restart: ngrok http 3100
+  - Copy the new URL → update your TV alert webhook URL
+  - Consider upgrading to a paid ngrok plan for a permanent URL
+
+SIGNALS NOT ARRIVING:
+  - Is the TV alert active? (clock icon should be visible in Alerts panel)
+  - Is the indicator on the chart? (remove and re-add if unsure)
+  - Is ngrok running? Check the ngrok terminal for activity
+  - Is the webhook URL correct? Must end with /webhook/signal
+  - Is the TV alert message box empty? (must be — indicator fills it)
+
+ORDERS NOT PLACING:
+  - Check server terminal for [projectx] error messages
+  - Verify PROJECTX_USERNAME and PROJECTX_API_KEY in .env
+  - Verify PROJECTX_ACCOUNT_ID matches an active account
+  - Verify NQ_CONTRACT_ID is the current front-month contract
+  - ProjectX may be down — check TopstepX status page
+
+CONTRACT ROLL (QUARTERLY):
+  NQ contracts expire quarterly. When the contract rolls:
+  1. Get the new contract ID (you'll be notified)
+  2. Update NQ_CONTRACT_ID in your .env
+  3. Restart: Ctrl+C → npm start
+
+FORGOT PROJECTX ACCOUNT ID:
+  - Log into TopstepX dashboard → your account ID is visible in the
+    account list. It is a numeric ID (e.g. 123456).
+
+
+================================================================================
+SUPPORT
+================================================================================
+
+  For executor issues:  Contact John (BetioChaps) via the group chat
+  For ProjectX issues:  Contact TopstepX support
+  For TradingView:      https://www.tradingview.com/support/
+
+================================================================================
