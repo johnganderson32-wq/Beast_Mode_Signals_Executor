@@ -188,10 +188,23 @@ ngrok will display something like:
 
 Copy the https:// URL. You will need it for the TradingView alert.
 
+IF YOU HAVE A PAID NGROK PLAN (Hobbyist or higher):
+  You can reserve a permanent domain in the ngrok dashboard (ngrok.com →
+  Domains → New Domain). Once reserved, start ngrok with:
+
+    ngrok http 3100 --domain=your-domain.ngrok-free.app
+
+  This gives you a URL that NEVER CHANGES. Set it in your TV alert once
+  and never update it again, even when you restart ngrok.
+
 IMPORTANT NOTES:
+  - ngrok must be started EVERY trading session. It is a live tunnel
+    process — when you close the terminal, the tunnel dies and TV alerts
+    cannot reach your executor.
   - Free ngrok sessions expire after ~2 hours. You'll need to restart
     ngrok and update your TV alert URL when it expires.
-  - Paid ngrok plans give you a permanent URL (no expiration).
+  - Paid ngrok plans with a reserved domain: URL never changes. Just
+    restart ngrok with the --domain flag — no TV alert update needed.
   - If you close the ngrok terminal, the tunnel dies and signals
     cannot reach your executor.
 
@@ -315,9 +328,10 @@ LIVE SIGNAL TEST:
 STEP 10 — DAILY OPERATIONS (AFTER SETUP IS COMPLETE)
 ================================================================================
 
-STARTING A SESSION:
+STARTING A SESSION (every trading day):
   Terminal 1:  cd Beast_Mode_Signals_Executor && npm start
   Terminal 2:  ngrok http 3100
+               (or with reserved domain: ngrok http 3100 --domain=your-domain.ngrok-free.app)
   Browser:     http://localhost:3100 (dashboard)
   TV:          Confirm alert is active (clock icon visible)
 
@@ -348,9 +362,11 @@ SERVER WON'T START:
       Mac:     lsof -i :3100                 → find the PID → kill -9 xxxx
 
 NGROK TUNNEL DIED:
-  - Free sessions expire. Restart: ngrok http 3100
-  - Copy the new URL → update your TV alert webhook URL
-  - Consider upgrading to a paid ngrok plan for a permanent URL
+  - Restart: ngrok http 3100
+    (or with reserved domain: ngrok http 3100 --domain=your-domain.ngrok-free.app)
+  - Free plans: copy the new URL → update your TV alert webhook URL
+  - Paid plans with reserved domain: URL is the same — no TV update needed
+  - ngrok must be started every session — it does not auto-start
 
 SIGNALS NOT ARRIVING:
   - Is the TV alert active? (clock icon should be visible in Alerts panel)

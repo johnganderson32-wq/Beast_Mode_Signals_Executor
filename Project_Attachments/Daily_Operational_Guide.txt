@@ -10,22 +10,32 @@
 SECTION 1 — TERMINAL SETUP (DO FIRST)
 ────────────────────────────────────────────────────────────────────────────────
 
-Open 2 terminals:
+Open 3 terminals:
 
   1. VS Code Terminal  →  Claude Code session (see Section 2)
                           Open VS Code on the Beast Mode folder:
                           File → Open Folder →
                           C:\Users\Trader\Documents\Trading\Beast_Mode_Signals_Executor
 
-  2. Regular CMD / Terminal  →  Running the server
-                                cd C:\Users\Trader\Documents\Trading\Beast_Mode_Signals_Executor
-                                npm start
-                                (leave this running — it is the active signal listener)
+  2. Regular CMD / Terminal #1  →  Running the server
+                                   cd C:\Users\Trader\Documents\Trading\Beast_Mode_Signals_Executor
+                                   npm start
+                                   (leave this running — it is the active signal listener)
+
+  3. Regular CMD / Terminal #2  →  ngrok tunnel
+                                   ngrok http 3100 --domain=beast-mode.trader.ngrok-free.app
+                                   (leave this running — it routes TV alerts to your server)
 
 NOTE: Beast Mode Executor does NOT use PM2. It runs directly via npm start.
       This is intentional — self-hosted traders need a simple, one-command setup.
       Keep the npm start terminal visible during the trading session so you can
       watch the live log output.
+
+NOTE: ngrok must be started EVERY session. It is a tunnel process — when you
+      close the terminal, the tunnel dies and TV alerts cannot reach your executor.
+      The --domain flag ensures the URL never changes, so your TV alert webhook
+      only needs to be set once:
+        https://beast-mode.trader.ngrok-free.app/webhook/signal
 
 
 ────────────────────────────────────────────────────────────────────────────────
@@ -64,8 +74,12 @@ Check the dashboard in a browser:
   → Should load the BEAST Mode dashboard (black background, 3 tabs)
 
 Check ngrok is running and forwarding to port 3100:
-  → Confirm the ngrok URL is set in your TradingView alert webhook field
-  → If ngrok session expired, restart it and update the TV alert URL
+  → Terminal #2 should show:
+      Forwarding  https://beast-mode.trader.ngrok-free.app -> http://localhost:3100
+  → If not running, start it:
+      ngrok http 3100 --domain=beast-mode.trader.ngrok-free.app
+  → The URL never changes with the --domain flag, so your TV alert
+    webhook does not need to be updated after ngrok restarts.
 
 Test the webhook endpoint (optional smoke test):
   curl -X POST http://localhost:3100/webhook/signal \
@@ -82,8 +96,9 @@ SECTION 4 — SESSION READINESS CHECKLIST
 Before BEAST Mode signals can execute, confirm ALL of the following:
 
   ☐ npm start terminal is running and shows "Listening on port 3100"
+  ☐ ngrok tunnel is running:
+      ngrok http 3100 --domain=beast-mode.trader.ngrok-free.app
   ☐ Dashboard loads at http://localhost:3100
-  ☐ ngrok is running and URL matches the TV alert webhook field
   ☐ TradingView BEAST Mode indicator is on the chart (1m NQ)
   ☐ TV alert is active (clock icon visible on the alert in TV Alerts panel)
   ☐ PROJECTX_ACCOUNT_ID in .env is the correct account for today
@@ -301,10 +316,12 @@ SECTION 10 — QUICK COMMAND REFERENCE
   PATCH /api/trades/:id                  Set outcome on a closed trade
   POST /webhook/signal                   Incoming signal endpoint (TV → executor)
 
-  NGROK:
+  NGROK (must start every session):
   ─────────────────────────────────────────────────────────
-  ngrok http 3100                        Start ngrok tunnel to port 3100
-                                         Copy the https URL → paste into TV alert
+  ngrok http 3100 --domain=beast-mode.trader.ngrok-free.app
+                                         John's reserved domain — URL never changes
+                                         Webhook: https://beast-mode.trader.ngrok-free.app/webhook/signal
+                                         Set in TV alert ONCE, never update again
 
   SMOKE TEST (confirm server is alive):
   ─────────────────────────────────────────────────────────
@@ -349,12 +366,16 @@ Send this to each trader you add as a GitHub collaborator:
   6. Expose port 3100 via ngrok:
        ngrok http 3100
        → Copy the https:// URL shown
+       (If you have a paid ngrok plan with a reserved domain, use:
+        ngrok http 3100 --domain=your-domain.ngrok-free.app
+        This gives you a permanent URL that never changes.)
 
   7. Set up TradingView alert:
        - Add the BEAST Mode indicator to your 1m NQ chart
          (get the Pine Script from the repo owner)
        - Create a new alert → Condition: BEAST Mode → Any alert() function call
        - Webhook URL: paste your ngrok URL + /webhook/signal
+         Example: https://your-domain.ngrok-free.app/webhook/signal
        - Message box: leave empty (indicator fills it automatically)
        - Expiration: set to Open-ended
 
