@@ -128,16 +128,39 @@ async function post(urlPath, body, tag) {
 
 // ---------------------------------------------------------------------------
 // CONTRACT HELPERS
+// Normalize any TV ticker variant to the product family key used in .env:
+//   NQ1!, MNQ1!, ENQ1!, MNQM2026, NQ  →  "NQ"
+//   GC1!, MGC1!, MGCM2026, GC         →  "GC"
 // ---------------------------------------------------------------------------
+const PRODUCT_MAP = {
+    NQ: 'NQ', MNQ: 'NQ', ENQ: 'NQ',
+    GC: 'GC', MGC: 'GC',
+};
+
+function normalizeInstrument(raw) {
+    const upper = raw.toUpperCase().trim();
+    // Try direct map first (handles "NQ", "MNQ", "GC", "MGC" exactly)
+    if (PRODUCT_MAP[upper]) return PRODUCT_MAP[upper];
+    // Strip trailing "1!", "2!" (TV continuous contract suffix)
+    let clean = upper.replace(/\d+!$/, '');
+    if (PRODUCT_MAP[clean]) return PRODUCT_MAP[clean];
+    // Strip TradingView expiry suffix (e.g. MNQM2026 → MNQ)
+    clean = upper.replace(/[FGHJKMNQUVXZ]\d{4}$/, '');
+    if (PRODUCT_MAP[clean]) return PRODUCT_MAP[clean];
+    return clean;
+}
+
 function getContractId(instrument) {
-    const key = `${instrument.toUpperCase()}_CONTRACT_ID`;
+    const family = normalizeInstrument(instrument);
+    const key = `${family}_CONTRACT_ID`;
     const id  = process.env[key];
-    if (!id) throw new Error(`No contract ID configured for ${instrument} (set ${key} in .env)`);
+    if (!id) throw new Error(`No contract ID configured for ${instrument} → ${family} (set ${key} in .env)`);
     return id;
 }
 
 function getQty(instrument) {
-    const key = `${instrument.toUpperCase()}_CONTRACTS`;
+    const family = normalizeInstrument(instrument);
+    const key = `${family}_CONTRACTS`;
     return parseInt(process.env[key] || '1', 10);
 }
 
