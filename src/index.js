@@ -18,7 +18,7 @@ app.use('/webhook', createWebhookRouter());
 app.use('/api',     createDashboardRouter());
 
 // Serve dashboard SPA on all non-API routes
-app.get('*', (req, res) => {
+app.get('/{*splat}', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
