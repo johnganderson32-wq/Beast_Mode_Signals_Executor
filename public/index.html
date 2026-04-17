@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Beast Mode Executor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0a0a0a;
+    --surface:  #111111;
+    --border:   #222222;
+    --text:     #e0e0e0;
+    --muted:    #666666;
+    --accent:   #ff6b00;
+    --bull:     #00e676;
+    --bear:     #ff1744;
+    --neutral:  #90caf9;
+    --warn:     #ffd740;
+    --radius:   6px;
+    --font:     'Segoe UI', system-ui, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 0.05em; }
+  header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  header .dot.live { background: var(--bull); box-shadow: 0 0 6px var(--bull); }
+
+  nav {
+    display: flex;
+    gap: 2px;
+    padding: 0 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  nav button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  nav button.active  { color: var(--accent); border-color: var(--accent); }
+  nav button:hover   { color: var(--text); }
+
+  main { padding: 24px; }
+
+  .tab { display: none; }
+  .tab.active { display: block; }
+
+  /* Stats cards */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .card .label { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .card .value { font-size: 22px; font-weight: 700; }
+  .card .value.pos { color: var(--bull); }
+  .card .value.neg { color: var(--bear); }
+  .card .value.neu { color: var(--neutral); }
+  .card .value.acc { color: var(--accent); }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { padding: 8px 10px; text-align: left; color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .bull { color: var(--bull); font-weight: 600; }
+  .bear { color: var(--bear); font-weight: 600; }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge.OPEN    { background: #1a2a1a; color: var(--bull); }
+  .badge.TP1     { background: #1a2a1a; color: #69f0ae; }
+  .badge.TARGET  { background: #1a3a1a; color: var(--bull); }
+  .badge.STOPPED { background: #2a1a1a; color: var(--bear); }
+  .badge.MANUAL  { background: #2a2a1a; color: var(--warn); }
+
+  .pos-r { color: var(--bull); }
+  .neg-r { color: var(--bear); }
+
+  /* Monthly table */
+  .monthly-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .monthly-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .monthly-row .mo   { color: var(--muted); font-size: 11px; }
+  .monthly-row .pts  { font-weight: 700; font-size: 14px; }
+
+  .refresh-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .refresh-row button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .refresh-row button:hover { border-color: var(--accent); color: var(--accent); }
+  .refresh-row .ts { color: var(--muted); font-size: 11px; }
+
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.06em; margin-bottom: 12px; }
+
+  select, input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .outcome-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .outcome-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot live" id="liveIndicator"></div>
+  <h1>BEAST MODE EXECUTOR</h1>
+</header>
+
+<nav>
+  <button class="active" data-tab="analytics">Analytics</button>
+  <button data-tab="trades">Trades</button>
+  <button data-tab="open">Open</button>
+</nav>
+
+<main>
+
+  <!-- ANALYTICS TAB -->
+  <div id="analytics" class="tab active">
+    <div class="refresh-row">
+      <button onclick="loadAll()">Refresh</button>
+      <span class="ts" id="lastRefresh">—</span>
+    </div>
+
+    <div class="cards" id="statsCards"></div>
+
+    <div class="section-title" style="margin-top:24px">Net Points by Month</div>
+    <div class="monthly-grid" id="monthlyGrid"></div>
+  </div>
+
+  <!-- TRADES TAB -->
+  <div id="trades" class="tab">
+    <div class="refresh-row">
+      <button onclick="loadAll()">Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Time</th><th>Instrument</th><th>Dir</th>
+            <th>Entry</th><th>SL</th><th>TP1</th><th>Target</th>
+            <th>rDist</th><th>Comp%</th><th>Hr</th><th>Transition</th>
+            <th>Status</th><th>Exit</th><th>R</th><th>Pts</th><th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="tradesBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- OPEN TAB -->
+  <div id="open" class="tab">
+    <div class="refresh-row">
+      <button onclick="loadAll()">Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Time</th><th>Instrument</th><th>Dir</th>
+            <th>Entry</th><th>SL</th><th>TP1</th><th>Target</th>
+            <th>rDist</th><th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="openBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── Tab routing ──────────────────────────────────────────────────────────────
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Fetch helpers ────────────────────────────────────────────────────────────
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${path} → ${r.status}`);
+  return r.json();
+}
+
+async function patchTrade(id, body) {
+  const r = await fetch(`/api/trades/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
+// ── Render helpers ───────────────────────────────────────────────────────────
+const fNum = (v, dp = 2) => v == null ? '—' : Number(v).toFixed(dp);
+const fPct = (v)          => v == null ? '—' : v.toFixed(1) + '%';
+const fR   = (v)          => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
+const fTs  = (iso)        => iso ? new Date(iso).toLocaleString() : '—';
+
+function dirCell(d) {
+  return d === 'bullish'
+    ? '<span class="bull">▲ Bullish</span>'
+    : '<span class="bear">▼ Bearish</span>';
+}
+
+function badgeHtml(status) {
+  return `<span class="badge ${status}">${status}</span>`;
+}
+
+function rCell(r) {
+  if (r == null) return '—';
+  const cls = r >= 0 ? 'pos-r' : 'neg-r';
+  return `<span class="${cls}">${fR(r)}</span>`;
+}
+
+// ── Analytics ────────────────────────────────────────────────────────────────
+function renderStats(s) {
+  const cards = [
+    { label: 'Trades',        value: s.trades,       cls: 'neu' },
+    { label: 'Win Rate',      value: fPct(s.winRate), cls: s.winRate >= 60 ? 'pos' : 'neg' },
+    { label: 'Expectancy',    value: s.expectancy != null ? fR(s.expectancy) : '—', cls: s.expectancy > 0 ? 'pos' : 'neg' },
+    { label: 'Profit Factor', value: fNum(s.profitFactor), cls: s.profitFactor >= 1.3 ? 'pos' : 'neg' },
+    { label: 'Net Points',    value: fNum(s.netPoints), cls: s.netPoints >= 0 ? 'pos' : 'neg' },
+    { label: 'Wins',          value: s.wins  ?? 0,   cls: 'pos' },
+    { label: 'Losses',        value: s.losses ?? 0,  cls: 'neg' },
+  ];
+  document.getElementById('statsCards').innerHTML = cards.map(c =>
+    `<div class="card"><div class="label">${c.label}</div><div class="value ${c.cls}">${c.value}</div></div>`
+  ).join('');
+
+  const monthly = s.monthly || {};
+  const months  = Object.keys(monthly).sort().reverse();
+  document.getElementById('monthlyGrid').innerHTML = months.length === 0
+    ? '<span style="color:var(--muted);font-size:12px">No closed trades yet</span>'
+    : months.map(mo => {
+        const pts = monthly[mo];
+        const cls = pts >= 0 ? 'pos-r' : 'neg-r';
+        return `<div class="monthly-row"><span class="mo">${mo}</span><span class="pts ${cls}">${fNum(pts)} pts</span></div>`;
+      }).join('');
+}
+
+// ── Trades table ─────────────────────────────────────────────────────────────
+function outcomeForm(id) {
+  return `<select id="st_${id}">
+    <option value="">— set outcome</option>
+    <option value="TP1">TP1 Hit</option>
+    <option value="TARGET">Target Hit</option>
+    <option value="STOPPED">Stopped</option>
+    <option value="MANUAL">Manual</option>
+  </select>
+  <input id="ep_${id}" placeholder="exit px" style="width:70px;margin:0 4px" />
+  <button class="outcome-btn" onclick="submitOutcome(${id})">Save</button>`;
+}
+
+async function submitOutcome(id) {
+  const status    = document.getElementById(`st_${id}`).value;
+  const exitPrice = parseFloat(document.getElementById(`ep_${id}`).value) || null;
+  if (!status) return;
+  await patchTrade(id, { status, exitPrice });
+  loadAll();
+}
+
+function renderTradesTable(trades, bodyId, showAction) {
+  const tbody = document.getElementById(bodyId);
+  if (!trades.length) {
+    const cols = showAction ? 17 : 16;
+    tbody.innerHTML = `<tr><td colspan="${cols}" style="color:var(--muted);text-align:center;padding:20px">No trades yet</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = trades.slice().reverse().map(t => `
+    <tr>
+      <td>${t.id}</td>
+      <td style="white-space:nowrap;color:var(--muted)">${fTs(t.timestamp)}</td>
+      <td>${t.instrument}</td>
+      <td>${dirCell(t.direction)}</td>
+      <td>${fNum(t.entryPrice)}</td>
+      <td>${fNum(t.stop)}</td>
+      <td>${fNum(t.tp1)}</td>
+      <td>${fNum(t.target)}</td>
+      <td>${fNum(t.rDist)}</td>
+      <td>${fNum(t.compression, 1)}</td>
+      <td>${t.entryHour ?? '—'}</td>
+      <td style="color:var(--muted);font-size:11px">${t.macroTransition ?? '—'}</td>
+      ${showAction ? `<td>${badgeHtml(t.status)}</td>
+      <td>${fNum(t.exitPrice)}</td>
+      <td>${rCell(t.rMultiple)}</td>
+      <td style="${t.pnlPoints >= 0 ? 'color:var(--bull)' : 'color:var(--bear)'}">${fNum(t.pnlPoints)}</td>
+      <td>${t.status === 'OPEN' ? outcomeForm(t.id) : ''}</td>` : ''}
+    </tr>`).join('');
+}
+
+// ── Main load ────────────────────────────────────────────────────────────────
+async function loadAll() {
+  try {
+    const [stats, trades, open] = await Promise.all([
+      api('/api/stats'),
+      api('/api/trades'),
+      api('/api/trades/open'),
+    ]);
+    renderStats(stats);
+    renderTradesTable(trades, 'tradesBody', true);
+    renderTradesTable(open,   'openBody',   false);
+    document.getElementById('lastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// Auto-refresh every 30 s
+loadAll();
+setInterval(loadAll, 30_000);
+</script>
+</body>
+</html>

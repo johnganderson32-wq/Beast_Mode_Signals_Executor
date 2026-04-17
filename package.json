@@ -1,0 +1,18 @@
+{
+  "name": "beast-mode-signals-executor",
+  "version": "1.0.0",
+  "description": "BEAST Mode signal executor — ProjectX order placement via TradingView webhook",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  }
+}
