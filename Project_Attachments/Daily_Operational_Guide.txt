@@ -1,0 +1,406 @@
+================================================================================
+  BEAST MODE SIGNALS EXECUTOR — DAILY OPERATIONAL GUIDE
+  Trader: BetioChaps (John)
+  Working Directory: C:\Users\Trader\Documents\Trading\Beast_Mode_Signals_Executor
+  Last Updated: 2026-04-17
+================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 1 — TERMINAL SETUP (DO FIRST)
+────────────────────────────────────────────────────────────────────────────────
+
+Open 2 terminals:
+
+  1. VS Code Terminal  →  Claude Code session (see Section 2)
+                          Open VS Code on the Beast Mode folder:
+                          File → Open Folder →
+                          C:\Users\Trader\Documents\Trading\Beast_Mode_Signals_Executor
+
+  2. Regular CMD / Terminal  →  Running the server
+                                cd C:\Users\Trader\Documents\Trading\Beast_Mode_Signals_Executor
+                                npm start
+                                (leave this running — it is the active signal listener)
+
+NOTE: Beast Mode Executor does NOT use PM2. It runs directly via npm start.
+      This is intentional — self-hosted traders need a simple, one-command setup.
+      Keep the npm start terminal visible during the trading session so you can
+      watch the live log output.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 2 — STARTING A CLAUDE CODE SESSION
+────────────────────────────────────────────────────────────────────────────────
+
+Open Claude Code in the VS terminal (Beast Mode workspace) and use this prompt:
+
+  "I'm BetioChaps. Working directory:
+   C:\Users\Trader\Documents\Trading\Beast_Mode_Signals_Executor.
+   Check memory before doing anything."
+
+Claude will:
+  - Load project memory (project_beast_mode.md, project_beast_mode_indicator.md,
+    project_beast_mode_executor.md)
+  - Summarize current build status and open items
+  - Be ready to continue from where we left off
+
+Do not start any build work until Claude has confirmed it has read memory.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 3 — SERVER HEALTH CHECK (DO BEFORE TRADING)
+────────────────────────────────────────────────────────────────────────────────
+
+In the server terminal, npm start should show:
+
+  [beast-executor] Listening on http://localhost:3100
+  [beast-executor] Webhook endpoint: POST /webhook/signal
+
+If the server is not running, start it:
+  npm start
+
+Check the dashboard in a browser:
+  http://localhost:3100
+  → Should load the BEAST Mode dashboard (black background, 3 tabs)
+
+Check ngrok is running and forwarding to port 3100:
+  → Confirm the ngrok URL is set in your TradingView alert webhook field
+  → If ngrok session expired, restart it and update the TV alert URL
+
+Test the webhook endpoint (optional smoke test):
+  curl -X POST http://localhost:3100/webhook/signal \
+    -H "Content-Type: application/json" \
+    -d "{}"
+  → Should return: {"status":"ignored","reason":"empty"}
+  → Confirms the server is alive and routing correctly
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 4 — SESSION READINESS CHECKLIST
+────────────────────────────────────────────────────────────────────────────────
+
+Before BEAST Mode signals can execute, confirm ALL of the following:
+
+  ☐ npm start terminal is running and shows "Listening on port 3100"
+  ☐ Dashboard loads at http://localhost:3100
+  ☐ ngrok is running and URL matches the TV alert webhook field
+  ☐ TradingView BEAST Mode indicator is on the chart (1m NQ)
+  ☐ TV alert is active (clock icon visible on the alert in TV Alerts panel)
+  ☐ PROJECTX_ACCOUNT_ID in .env is the correct account for today
+  ☐ NQ_CONTRACTS in .env is set to your intended size (2 = TP1 + runner)
+  ☐ Hour gate in indicator settings reflects what you want (Set F default:
+    08, 11, 13, 14, 16 ET — uncheck to observe all hours without alerts)
+
+  STRATEGY STATUS (as of 2026-04-17):
+    BEAST Mode → FORWARD TESTING (paper account or evaluation account)
+    Do NOT route to a live funded account until live signal test is validated.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 5 — TRADING SESSION (LIVE MONITORING)
+────────────────────────────────────────────────────────────────────────────────
+
+LIVE LOG MONITORING (server terminal):
+
+Watch the npm start output for these log lines:
+
+  [beast-executor]    Server startup confirmation
+  [webhook]           Signal received — shows instrument, direction, entry,
+                      SL, TP1, target, rDist, compression, entryHour
+  [webhook] IGNORED   Empty payload (TV multi-destination blank delivery — normal)
+  [webhook] REJECTED  Invalid payload — missing fields or wrong setup/action
+  [projectx]          Order placement events
+  [projectx] ENTRY    Market order placed — shows direction, qty, instrument
+  [projectx] SL       Stop order placed — shows stop price
+  [projectx] TP1      Limit order placed at TP1 price
+  [projectx] TARGET   Limit runner placed at target price (only when qty >= 2)
+  [projectx] ERR      Order failed — investigate immediately
+
+SIGNAL QUALITY FIELDS (visible in [webhook] log line):
+  instrument          NQ or GC
+  direction           bullish / bearish
+  price               Entry close price (market order will fill near this)
+  stop                Stop loss price
+  tp1                 TP1 = entry +/- 0.5R
+  target              Target = entry +/- 1R
+  rDist               Inside zone range in points (your risk unit)
+  compression         Inside zone as % of prior zone — lower = more compressed
+  entryHour           ET hour of entry (should match Set F hours)
+  macroTransition     Which macro zones formed the Inside (e.g. M2_to_M3)
+  h4ZoneId            "pending" until Pine v3 adds H4 zone classification
+
+DASHBOARD (http://localhost:3100 or ngrok URL):
+  Analytics tab  → Win Rate, Expectancy, Profit Factor, Net Points, Net by Month
+  Trades tab     → Full history; set manual outcomes (TP1/TARGET/STOPPED/MANUAL)
+  Open tab       → Active positions only
+
+ENTERING TRADE OUTCOMES MANUALLY:
+  Until automated outcome detection is built, you must mark outcomes in the
+  Trades tab after each trade closes:
+  1. Go to http://localhost:3100 → Trades tab
+  2. Find the trade row → click the outcome dropdown
+  3. Select: TP1 Hit / Target Hit / Stopped / Manual
+  4. Enter the exit price
+  5. Click Save
+  → Dashboard analytics update immediately
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 6 — MAKING CODE CHANGES & DEPLOYING
+────────────────────────────────────────────────────────────────────────────────
+
+STANDARD WORKFLOW (after any code change):
+
+  Step 1 — Stop the server:
+    Ctrl+C in the server terminal
+
+  Step 2 — Stage and commit (VS terminal or server terminal):
+    git add src/ public/
+    git commit -m "Brief description of what changed"
+    git push origin main
+
+  Step 3 — Restart:
+    npm start
+
+NOTE: There is no post-commit auto-push hook in this repo (unlike EvilSignals-
+      Executor). You must run git push manually after committing.
+
+IMPORTANT: If a trader pulls your update, they run:
+    git pull
+    (restart their npm start terminal)
+  If the update adds new .env variables, they must add those to their .env first.
+
+CHECK GIT STATUS AT ANY TIME:
+    git status              → Shows modified/untracked files
+    git log --oneline -5    → Last 5 commits
+    git diff src/           → What changed in src/
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 7 — TRADE ANALYTICS
+────────────────────────────────────────────────────────────────────────────────
+
+All analytics are computed live from the in-memory trade store and served
+through the dashboard. No scripts to run — just open the browser.
+
+  http://localhost:3100  →  Analytics tab
+
+AVAILABLE METRICS:
+  Win Rate          % of closed trades that hit TP1 or TARGET
+  Expectancy        Average R-multiple per closed trade
+  Profit Factor     Sum of winning R / sum of losing R
+  Net Points        Total P&L in index points across all closed trades
+  Net by Month      Points per calendar month (YYYY-MM grid)
+
+R-MULTIPLE CALCULATION:
+  Uses exit price vs entry price vs rDist (Inside zone range).
+  Example: rDist=50, entry=21500, exit at TP1=21525 → pnlPts=25, R=+0.50
+  SL hit: exit=21450 → pnlPts=-50, R=-1.00
+
+NOTE: Trade store is in-memory — it resets when the server restarts.
+      This is a known limitation. Persistent storage (SQLite or flat-file)
+      is a future build item. Until then, log outcomes in the Trades tab
+      BEFORE restarting the server if you want the analytics to reflect them.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 8 — INDICATOR SETTINGS REFERENCE
+────────────────────────────────────────────────────────────────────────────────
+
+File: tradingview/Beast_Mode/BEAST_Mode_v1.pine
+      (lives in the EvilSignals-Executor repo, not this one)
+
+SET F DEFAULTS (confirmed OOS):
+  Hour Gate      → ON — hours 08, 11, 13, 14, 16 ET
+  Allow M3→M1   → ON
+  Min rDist      → 20 pts
+  Compression    → OFF (sweet spot ≤40% when enabled)
+
+VISUAL SETTINGS:
+  Zone Labels    → ON (preprint labels track zone growth live)
+  H1 Lines       → ON (session limit = 5 Globex sessions)
+  H1 Stats       → ON (HH:MM–HH:MM range label above each H1 candle)
+  Signal Labels  → ON (arrow shapes by default, configurable)
+  Breakout Bar   → ON (highlights entry bar in orange)
+
+ALERT SETUP IN TRADINGVIEW:
+  Condition     → BEAST Mode: Any alert() function call
+  Message       → (leave as default — the indicator builds the JSON payload)
+  Webhook URL   → Your ngrok URL + /webhook/signal
+                  Example: https://abc123.ngrok-free.app/webhook/signal
+  Expiration    → Set to Open-ended or far future date
+
+CONFIRM THE ALERT IS SENDING JSON:
+  After the first signal fires, check the server terminal for:
+    [webhook] BEAST bullish NQ  entry=... SL=... TP1=... T=...
+  If you see "[webhook] Empty payload — ignored" instead, the TV alert
+  message box was left blank. The indicator populates it automatically —
+  do not type anything in the message box.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 9 — END OF DAY WRAP-UP
+────────────────────────────────────────────────────────────────────────────────
+
+  1. Mark all trade outcomes in the Trades tab before stopping the server.
+     Once the server restarts, the in-memory store resets.
+
+  2. Note the day's signals in your trading journal:
+       - How many signals fired
+       - Which hours/macro transitions were active
+       - Compression readings on Inside zones
+       - Any anomalies (missed fills, rejected orders, ngrok drops)
+
+  3. Confirm no uncommitted changes:
+       git status
+     If anything is modified:
+       git add src/ public/
+       git commit -m "EOD: description"
+       git push origin main
+
+  4. Stop the server when done:
+       Ctrl+C in the server terminal
+
+  5. Update traders if you pushed changes:
+       Tell them: git pull, then restart npm start.
+       If .env variables changed, send them the new keys to add.
+
+  6. Tell Claude anything worth saving to memory:
+       - Unusual signal behavior
+       - .env settings changed
+       - Trader accounts updated
+       Example: "Save to memory: live test confirmed 3 orders land correctly.
+                 Moving to paper account for 2 weeks."
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 10 — QUICK COMMAND REFERENCE
+────────────────────────────────────────────────────────────────────────────────
+
+  SERVER COMMANDS (server terminal):
+  ─────────────────────────────────────────────────────────
+  npm start                              Start the executor server
+  Ctrl+C                                 Stop the server
+  node --watch src/index.js              Dev mode (auto-restarts on file save)
+
+  GIT COMMANDS:
+  ─────────────────────────────────────────────────────────
+  git status                             Show modified/untracked files
+  git diff src/                          Show what changed in src/
+  git log --oneline -5                   Last 5 commits
+  git add src/ public/                   Stage changes
+  git commit -m "message"               Commit
+  git push origin main                   Push to GitHub (manual — no auto-hook)
+  git pull                               Pull latest (for traders updating)
+
+  API ENDPOINTS (browser or curl at localhost:3100):
+  ─────────────────────────────────────────────────────────
+  GET  /api/trades                       All trades (open + closed)
+  GET  /api/trades/open                  Open positions only
+  GET  /api/stats                        Analytics (WR, expectancy, PF, net)
+  PATCH /api/trades/:id                  Set outcome on a closed trade
+  POST /webhook/signal                   Incoming signal endpoint (TV → executor)
+
+  NGROK:
+  ─────────────────────────────────────────────────────────
+  ngrok http 3100                        Start ngrok tunnel to port 3100
+                                         Copy the https URL → paste into TV alert
+
+  SMOKE TEST (confirm server is alive):
+  ─────────────────────────────────────────────────────────
+  curl -X POST http://localhost:3100/webhook/signal \
+    -H "Content-Type: application/json" -d "{}"
+  → Expected: {"status":"ignored","reason":"empty"}
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 11 — TRADER SETUP GUIDE (for new collaborators)
+────────────────────────────────────────────────────────────────────────────────
+
+Send this to each trader you add as a GitHub collaborator:
+
+  1. Accept the GitHub collaborator invite for:
+       johnganderson32-wq/Beast_Mode_Signals_Executor
+
+  2. Clone the repo:
+       git clone https://github.com/johnganderson32-wq/Beast_Mode_Signals_Executor.git
+       cd Beast_Mode_Signals_Executor
+
+  3. Install dependencies:
+       npm install
+
+  4. Configure your environment:
+       Copy .env.example to .env
+       Fill in the following values:
+
+         PORT=3100
+         WEBHOOK_SECRET=            (leave blank or set a shared secret)
+         PROJECTX_API_URL=https://gateway-rtc.main.topstepx.com/api
+         PROJECTX_USERNAME=         your ProjectX username
+         PROJECTX_API_KEY=          your ProjectX API key
+         PROJECTX_ACCOUNT_ID=       your account ID (found in ProjectX dashboard)
+         NQ_CONTRACT_ID=            current front-month NQ (e.g. CON.F.US.ENQ.M26)
+         NQ_CONTRACTS=2             (2 = TP1 contract + 1 runner; 1 = TP1 only)
+
+  5. Start the server:
+       npm start
+       → Should show: [beast-executor] Listening on http://localhost:3100
+
+  6. Expose port 3100 via ngrok:
+       ngrok http 3100
+       → Copy the https:// URL shown
+
+  7. Set up TradingView alert:
+       - Add the BEAST Mode indicator to your 1m NQ chart
+         (get the Pine Script from the repo owner)
+       - Create a new alert → Condition: BEAST Mode → Any alert() function call
+       - Webhook URL: paste your ngrok URL + /webhook/signal
+       - Message box: leave empty (indicator fills it automatically)
+       - Expiration: set to Open-ended
+
+  8. Test it:
+       - Watch the npm start terminal
+       - When the next BEAST signal fires on TV, you should see:
+           [webhook] BEAST bullish NQ  entry=...  SL=...  TP1=...  T=...
+           [projectx] Entry: bullish 2x NQ
+           [projectx] SL placed @ ...
+           [projectx] TP1 placed @ ...
+           [projectx] Target placed @ ...
+
+  NOTES:
+  - The trade store is in-memory. It resets when the server restarts.
+    Mark your trade outcomes in the dashboard before restarting.
+  - To get updates: git pull, then restart npm start.
+  - If .env variables changed in an update, add the new keys to your .env first.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SECTION 12 — KEY FILE LOCATIONS
+────────────────────────────────────────────────────────────────────────────────
+
+  Project root:    C:\Users\Trader\Documents\Trading\Beast_Mode_Signals_Executor\
+  Source code:     src\
+  Public (UI):     public\
+  This guide:      Project_Attachments\Daily_Operational_Guide.txt
+  GitHub:          https://github.com/johnganderson32-wq/Beast_Mode_Signals_Executor
+
+  SOURCE FILES:
+    src\index.js        Express server entry point (port 3100)
+    src\webhook.js      Signal validator + order trigger
+    src\projectx.js     ProjectX auth + 3-order placement
+    src\db.js           In-memory trade store + analytics engine
+    src\dashboard.js    REST API for dashboard data
+    public\index.html   Dashboard SPA (black background)
+
+  CONFIG:
+    .env                Your local environment (not committed — copy from .env.example)
+    .env.example        Template — all required keys documented
+
+  INDICATOR (in EvilSignals-Executor repo):
+    tradingview\Beast_Mode\BEAST_Mode_v1.pine
+
+  BACKTESTER REFERENCE (in EvilSignals-Executor repo):
+    backtester\beast_mode_nq.js
+    research\beast_mode_nq.html / .csv
+
+================================================================================
