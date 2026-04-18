@@ -53,10 +53,14 @@ function tradingDayET() {
 // ---------------------------------------------------------------------------
 // PERSISTENCE
 // ---------------------------------------------------------------------------
+// Atomic write: write to .tmp then rename. rename() is atomic on POSIX and
+// on Windows (same volume). If we crash between write and rename, the old
+// daily-pnl.json is intact and a stray .tmp is all that's left behind.
 function savePnlState() {
     try {
         if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
-        fs.writeFileSync(PNL_FILE, JSON.stringify({
+        const data = JSON.stringify({
+            _v:   1,
             date: dailyDate,
             pnl:  dailyPnl,
             tradingEnabled,
@@ -64,7 +68,10 @@ function savePnlState() {
             circuitBreakerFiredAt,
             bias: directionBias,
             signalsExecuted, signalsMissed, signalsTotal,
-        }));
+        });
+        const tmp = PNL_FILE + '.tmp';
+        fs.writeFileSync(tmp, data);
+        fs.renameSync(tmp, PNL_FILE);
     } catch {}
 }
 

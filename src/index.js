@@ -14,6 +14,7 @@ const { createDashboardRouter } = require('./dashboard');
 const db         = require('./db');
 
 risk.restorePnlState();
+db.loadFromDisk();
 
 const PORT = parseInt(process.env.PORT || '3100', 10);
 

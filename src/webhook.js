@@ -1,5 +1,7 @@
 'use strict';
 
+const fs        = require('fs');
+const path      = require('path');
 const express   = require('express');
 const db        = require('./db');
 const px        = require('./projectx');
@@ -10,6 +12,27 @@ const logStream = require('./log-stream');
 
 // Required fields from the BEAST Mode Pine payload
 const REQUIRED = ['instrument', 'direction', 'action', 'setup', 'price', 'stop', 'tp1', 'target'];
+
+// Append-only audit log of every validated webhook signal and how we handled
+// it. Skips auth failures and empty-body pings (those aren't real signals).
+const SIGNALS_FILE = path.join(__dirname, '..', 'logs', 'signals.jsonl');
+
+function logSignal(payload, disposition, extra = {}) {
+    try {
+        const dir = path.dirname(SIGNALS_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const entry = {
+            _v:         1,
+            receivedAt: new Date().toISOString(),
+            disposition,
+            ...extra,
+            payload,
+        };
+        fs.appendFileSync(SIGNALS_FILE, JSON.stringify(entry) + '\n');
+    } catch (e) {
+        console.warn(`[webhook] signals log failed: ${e.message}`);
+    }
+}
 
 function validate(payload) {
     for (const field of REQUIRED) {
@@ -70,6 +93,7 @@ function createWebhookRouter() {
         const err = validate(payload);
         if (err) {
             console.warn(`[webhook] Invalid payload: ${err}`, payload);
+            logSignal(payload, 'rejected', { reason: err });
             return res.status(400).json({ error: err });
         }
 
@@ -108,6 +132,7 @@ function createWebhookRouter() {
         if (!gate.ok) {
             console.warn(`[webhook] BLOCKED — ${gate.reason}`);
             risk.incrementSignals(false);
+            logSignal(payload, 'blocked', { reason: gate.reason });
             return res.status(200).json({ status: 'blocked', reason: gate.reason });
         }
 
@@ -118,6 +143,7 @@ function createWebhookRouter() {
         } catch (e) {
             console.warn(`[webhook] BLOCKED — ${e.message}`);
             risk.incrementSignals(false);
+            logSignal(payload, 'blocked', { reason: 'no_contract_id', detail: e.message });
             return res.status(200).json({ status: 'blocked', reason: 'no_contract_id' });
         }
         const slPoints       = Math.abs(Number(entryPrice) - Number(stop));
@@ -125,6 +151,7 @@ function createWebhookRouter() {
         if (qty < 1) {
             console.warn(`[webhook] BLOCKED — ${qtyReason}`);
             risk.incrementSignals(false);
+            logSignal(payload, 'blocked', { reason: qtyReason });
             return res.status(200).json({ status: 'blocked', reason: qtyReason });
         }
 
@@ -153,6 +180,12 @@ function createWebhookRouter() {
             db.update(trade.id, { status: 'MANUAL', exitTime: new Date().toISOString() });
             risk.incrementSignals(false);
         }
+
+        logSignal(payload, orderError ? 'order_failed' : 'accepted', {
+            tradeId: trade.id,
+            qty,
+            ...(orderError ? { error: orderError } : {}),
+        });
 
         return res.status(200).json({
             status:  orderError ? 'order_failed' : 'accepted',

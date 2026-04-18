@@ -1,13 +1,82 @@
 'use strict';
 
-// In-memory trade store — persists for the lifetime of the process.
-// All trades are kept in insertion order.
+// Trade store backed by an append-only JSONL log at logs/trades.jsonl.
+// In-memory array is the source of truth at runtime; disk is the source of
+// truth across restarts. Every insert/update appends one line:
+//   {"_op":"insert","_v":1,"id":1,"status":"OPEN",...}
+//   {"_op":"update","_v":1,"id":1,"status":"TP1","exitPrice":...}
+// On boot, loadFromDisk() streams the file and folds updates into inserts
+// by id to rebuild the array. Append-only writes are atomic per line, so a
+// crash mid-write at worst leaves a trailing partial line that the parser
+// skips. No schema migration is wired up yet; _v:1 is stamped on every
+// record so future migrations can branch on version.
+
+const fs   = require('fs');
+const path = require('path');
+
+const SCHEMA_VERSION = 1;
+const LOG_DIR     = path.join(__dirname, '..', 'logs');
+const TRADES_FILE = path.join(LOG_DIR, 'trades.jsonl');
 
 const trades = [];
 let nextId = 1;
 
+function ensureLogDir() {
+    if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+}
+
+function appendLine(obj) {
+    try {
+        ensureLogDir();
+        fs.appendFileSync(TRADES_FILE, JSON.stringify(obj) + '\n');
+    } catch (e) {
+        console.warn(`[db] append failed: ${e.message}`);
+    }
+}
+
+function loadFromDisk() {
+    try {
+        if (!fs.existsSync(TRADES_FILE)) {
+            console.log('[db] No trades.jsonl found — starting with empty trade store');
+            return;
+        }
+        const raw   = fs.readFileSync(TRADES_FILE, 'utf8');
+        const lines = raw.split('\n').filter(Boolean);
+        let inserted = 0;
+        let updated  = 0;
+        let skipped  = 0;
+
+        for (const line of lines) {
+            let entry;
+            try { entry = JSON.parse(line); } catch { skipped++; continue; }
+            if (!entry || typeof entry !== 'object' || !entry._op) { skipped++; continue; }
+
+            if (entry._op === 'insert') {
+                const { _op, ...rec } = entry;
+                trades.push(rec);
+                if (typeof rec.id === 'number' && rec.id >= nextId) nextId = rec.id + 1;
+                inserted++;
+            } else if (entry._op === 'update') {
+                const t = trades.find(x => x.id === entry.id);
+                if (t) {
+                    const { _op, id, _v, ...fields } = entry;
+                    Object.assign(t, fields);
+                    updated++;
+                } else {
+                    skipped++;
+                }
+            }
+        }
+        const openCount = trades.filter(t => t.status === 'OPEN').length;
+        console.log(`[db] Loaded trades.jsonl — ${trades.length} trades (${openCount} OPEN), ${updated} updates applied${skipped ? `, ${skipped} lines skipped` : ''}`);
+    } catch (e) {
+        console.warn(`[db] loadFromDisk: ${e.message}`);
+    }
+}
+
 function insert(trade) {
     const record = {
+        _v:              SCHEMA_VERSION,
         id:              nextId++,
         timestamp:       new Date().toISOString(),
         instrument:      trade.instrument,
@@ -33,6 +102,7 @@ function insert(trade) {
         orderIds:        trade.orderIds || {}, // { entry, sl, tp1, target }
     };
     trades.push(record);
+    appendLine({ _op: 'insert', ...record });
     return record;
 }
 
@@ -40,6 +110,7 @@ function update(id, fields) {
     const t = trades.find(x => x.id === id);
     if (!t) return null;
     Object.assign(t, fields);
+    appendLine({ _op: 'update', _v: SCHEMA_VERSION, id, ...fields });
     return t;
 }
 
@@ -94,4 +165,4 @@ function getStats() {
     };
 }
 
-module.exports = { insert, update, getAll, getOpen, getById, getStats };
+module.exports = { insert, update, getAll, getOpen, getById, getStats, loadFromDisk };
