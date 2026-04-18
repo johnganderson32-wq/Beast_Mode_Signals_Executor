@@ -1,8 +1,10 @@
 'use strict';
 
-const express  = require('express');
-const db       = require('./db');
-const px       = require('./projectx');
+const express    = require('express');
+const db         = require('./db');
+const px         = require('./projectx');
+const settings   = require('./settings');
+const logStream  = require('./log-stream');
 
 // Required fields from the BEAST Mode Pine payload
 const REQUIRED = ['instrument', 'direction', 'action', 'setup', 'price', 'stop', 'tp1', 'target'];
@@ -57,6 +59,26 @@ function createWebhookRouter() {
 
         console.log(`[webhook] BEAST ${direction.toUpperCase()} ${instrument}  entry=${entryPrice}  SL=${stop}  TP1=${tp1}  T=${target}`);
 
+        // ── Trading enabled check ──
+        if (!settings.get('tradingEnabled')) {
+            console.log('[webhook] Signal blocked — trading is disabled');
+            return res.status(200).json({ status: 'blocked', reason: 'trading_disabled' });
+        }
+
+        // ── Bias check ──
+        const nqBias = settings.get('nqBias');
+        const dir    = String(direction).toLowerCase();
+        if (nqBias !== 'ALL') {
+            if (nqBias === 'LONG' && dir === 'bearish') {
+                console.log('[webhook] Signal blocked — NQ bias is LONG only, got bearish');
+                return res.status(200).json({ status: 'blocked', reason: 'bias_long_only' });
+            }
+            if (nqBias === 'SHORT' && dir === 'bullish') {
+                console.log('[webhook] Signal blocked — NQ bias is SHORT only, got bullish');
+                return res.status(200).json({ status: 'blocked', reason: 'bias_short_only' });
+            }
+        }
+
         // Record the trade
         const trade = db.insert({
             instrument, direction, entryPrice, stop, tp1, target,
@@ -72,6 +94,7 @@ function createWebhookRouter() {
         let orderError  = null;
         try {
             orderResult = await px.placeOrder({ instrument, direction, stop, tp1, target });
+            logStream.addLine(`[ENTRY] BEAST ${direction.toUpperCase()} ${instrument} entry=${entryPrice} SL=${stop} TP1=${tp1} T=${target}`);
         } catch (e) {
             orderError = e.message;
             console.error(`[webhook] Order failed: ${e.message}`);

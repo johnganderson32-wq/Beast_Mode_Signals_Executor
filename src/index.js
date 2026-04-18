@@ -2,9 +2,13 @@
 
 require('dotenv').config();
 
+// Log stream must be required early to monkey-patch console before other modules log
+require('./log-stream');
+
 const express    = require('express');
 const path       = require('path');
-const { createWebhookRouter } = require('./webhook');
+const settings   = require('./settings');
+const { createWebhookRouter }   = require('./webhook');
 const { createDashboardRouter } = require('./dashboard');
 const db         = require('./db');
 
@@ -25,4 +29,5 @@ app.get('/{*splat}', (req, res) => {
 app.listen(PORT, () => {
     console.log(`[beast-executor] Listening on http://localhost:${PORT}`);
     console.log(`[beast-executor] Webhook endpoint: POST /webhook/signal`);
+    console.log(`[beast-executor] Trading: ${settings.get('tradingEnabled') ? 'ON' : 'OFF'}`);
 });
