@@ -22,7 +22,7 @@ src/
   risk.js       — Dollar-denominated gate stack + session state (ported from EvilSignals)
   contracts.js  — Tick-size / $/pt table, family normalization, tick rounding
   settings.js   — User-configurable settings (contracts, caps, session)
-  db.js         — In-memory trade store + analytics (WR, expectancy, PF, net $)
+  db.js         — Trade store (in-memory, backed by logs/trades.jsonl) + analytics
   dashboard.js  — REST API, per-family bias, broker-side flatten, trade-close hooks
   log-stream.js — console → SSE ring buffer for the live log pane
 public/
@@ -30,9 +30,12 @@ public/
 Project_Attachments/
   Daily_Operational_Guide.txt
   Setup_Guide.txt
+  EvilSignals_Persistence_Hardening.md — handoff doc for EvilSignals agent
 logs/
   .token.json    — persisted ProjectX JWT
-  daily-pnl.json — persisted session risk state (P&L, streak, bias, counts)
+  daily-pnl.json — session risk state (P&L, streak, bias, counts); atomic tmp+rename
+  trades.jsonl   — append-only trade event log: {_op:insert|update, _v:1, id, ...}
+  signals.jsonl  — append-only audit log of every validated webhook signal + disposition
 ```
 
 ---
@@ -152,19 +155,27 @@ When `consecutiveLossLimit` is hit:
 
 ## Strategy Context (read-only — do not build strategy here)
 
-**BEAST Mode** = macro zone Inside bar breakout on 1-minute NQ.
+**BEAST Mode (Pine v3+)** = dual-asset macro-zone Inside breakout. An Inside must form on BOTH the chart symbol AND a paired symbol on the same macro zone; both must break the Inside range in the same direction during the Killzone before the trade fires. Single-asset breakouts no longer execute.
 
 **Macro zones per hour:** M1 Opening (:00–:09), Dead (:10–:19), M2 Killzone (:20–:39), Dead (:40–:49), M3 Closing (:50–:59)
 
 **Inside detection:** at zone completion (:09/:39/:59), if currentHigh < prevHigh AND currentLow > prevLow → Inside zone. Inside expires when the next zone completes.
 
-**Entry:** first 1m close above Inside High (bull) or below Inside Low (bear) in a non-dead zone.
+**Entry:** during the Killzone (non-dead) macro, trade fires on the 1m bar close where the SECOND asset confirms the same direction as the first — bull = close above Inside High, bear = close below Inside Low. If both confirm on the same bar, the trade fires directly on that bar.
 
-**Risk unit:** `rDist` = Inside zone range (insideHigh − insideLow). SL = entry ± rDist. TP1 = entry ± 0.5×rDist. Target = entry ± 1.0×rDist.
+**Risk unit:** `rDist` = chart symbol's Inside zone range (insideHigh − insideLow). Paired symbol's rDist is NOT used for SL/TP math. SL = entry ± rDist. TP1 = entry ± 0.5×rDist. Target = entry ± 1.0×rDist.
+
+**Three-alert model (Pine side):**
+
+1. *Sync Formed* (courtesy, plain text starting with `BEAST Sync:`) — fires at zone close when both assets show an Inside on the same macro. Trader has ~10 min before the Killzone.
+2. *First-Side Live* (courtesy, plain text starting with `BEAST Live BULL:` or `BEAST Live BEAR:`) — fires during Killzone when exactly one asset breaks the Inside range first.
+3. *Execute* (JSON, see Webhook Payload above) — fires on the confirming bar. Payload format identical to v2.
+
+Courtesy alerts 1 and 2 are routed to phone/email only via a separate TradingView alert; the executor webhook receives Execute alerts only. If a courtesy ever lands on the webhook by accident, `express.json()` fails to parse it, `req.body` is empty, and the webhook silently drops it.
 
 **Set F filters (OOS confirmed — 71.4% WR, +0.071 EV, 461 trades):** hours 08/11/13/14/16 ET; H4 exclusions SH_D/TERM_D/FS_D (pending in Pine v3); min rDist 20 pts; M3→M1 allowed; compression ≤40% (optional).
 
-**Pine Script:** `EvilSignals-Executor/tradingview/Beast_Mode/BEAST_Mode_v1.pine`
+**Pine Script:** lives under `EvilSignals-Executor/tradingview/Beast_Mode/` — current active version is v3+ (dual-asset sync). Exact filename evolves; check that folder for the latest.
 
 ---
 
@@ -196,19 +207,19 @@ Two tabs: **EXECUTOR** (active trade + live log + settings) and **PERFORMANCE** 
 **Done:**
 - [x] Express webhook server with payload validation
 - [x] ProjectX 3-order sequence (market + stop + limit + runner)
-- [x] In-memory trade store with analytics
 - [x] Dashboard SPA (2 tabs)
 - [x] Dollar-denominated gate stack (daily loss/profit, session close, streak, per-family positions, bias, dynamic sizing)
 - [x] Broker-side FLATTEN with real fill price retrieval
-- [x] Session-state persistence (`logs/daily-pnl.json`)
+- [x] Session-state persistence — `logs/daily-pnl.json` with atomic tmp+rename and `_v:1`
+- [x] Persistent trade store — `logs/trades.jsonl` append-only event log; rebuilt at boot via `db.loadFromDisk()`
+- [x] Signal audit log — `logs/signals.jsonl` append-only, every webhook signal + disposition
 
 **Priority list (in order):**
-1. **Live signal test** — TV → ngrok → executor → verify gates + orders + dashboard flow end-to-end
-2. **Persistent trade store** — SQLite or JSONL so trade history survives restart (separate from daily-pnl.json)
-3. **Automated outcome detection** — subscribe to ProjectX user hub / poll fills so STOPPED/TP1/TARGET update without manual entry
-4. **H4 zone classification** — Pine v3 populates `h4ZoneId`; executor filters SH_D/TERM_D/FS_D
-5. **RTC quote feed + momentum trail** — see build path above
-6. **Contract roll helper** — dashboard button to advance expiry codes
+1. **Live signal test (Phase 2+)** — TV → ngrok → executor → verify gates + orders + dashboard flow end-to-end. Phase 1 gates passed via synthetic curl; Phase 2 waits on live NQ hours.
+2. **Automated outcome detection** — subscribe to ProjectX user hub / poll fills so STOPPED/TP1/TARGET update without manual entry
+3. **H4 zone classification** — Pine v3+ populates `h4ZoneId`; executor filters SH_D/TERM_D/FS_D
+4. **RTC quote feed + momentum trail** — see build path above
+5. **Contract roll helper** — dashboard button to advance expiry codes
 
 ---
 
