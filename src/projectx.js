@@ -239,4 +239,11 @@ async function placeOrder({ instrument, direction, stop, tp1, target }) {
 // ---------------------------------------------------------------------------
 // EXPORTS
 // ---------------------------------------------------------------------------
-module.exports = { authenticate, ensureAuth, placeOrder };
+function getAuthStatus() {
+    if (!token) return { connected: false, reason: 'no token' };
+    const exp = decodeTokenExpiry(token);
+    if (exp && Date.now() >= exp) return { connected: false, reason: 'token expired' };
+    return { connected: true, expiresAt: exp ? new Date(exp).toISOString() : null };
+}
+
+module.exports = { authenticate, ensureAuth, placeOrder, getAuthStatus };

@@ -26,8 +26,16 @@ app.get('/{*splat}', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
+const px = require('./projectx');
+
+app.listen(PORT, async () => {
     console.log(`[beast-executor] Listening on http://localhost:${PORT}`);
     console.log(`[beast-executor] Webhook endpoint: POST /webhook/signal`);
     console.log(`[beast-executor] Trading: ${settings.get('tradingEnabled') ? 'ON' : 'OFF'}`);
+    // Authenticate with ProjectX on boot so the dashboard dot goes green
+    try {
+        await px.authenticate();
+    } catch (e) {
+        console.error(`[beast-executor] ProjectX auth failed on boot: ${e.message}`);
+    }
 });

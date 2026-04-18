@@ -4,9 +4,37 @@ const express    = require('express');
 const db         = require('./db');
 const settings   = require('./settings');
 const logStream  = require('./log-stream');
+const px         = require('./projectx');
 
 function createDashboardRouter() {
     const router = express.Router();
+
+    // ── Health (connection dots) ────────────────────────────────────────────
+    router.get('/health', async (req, res) => {
+        const auth  = px.getAuthStatus();
+        // Ngrok: check if our own webhook is reachable via the public URL
+        let ngrokOk = false;
+        const ngrokUrl = process.env.NGROK_URL || '';
+        if (ngrokUrl) {
+            try {
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => ctrl.abort(), 3000);
+                const r = await fetch(`${ngrokUrl}/webhook/signal`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                    signal: ctrl.signal,
+                });
+                clearTimeout(timer);
+                ngrokOk = r.ok;
+            } catch {}
+        }
+        res.json({
+            projectx: auth,
+            ngrok:    { connected: ngrokOk, url: ngrokUrl || null },
+            rtc:      { connected: false, reason: 'not yet implemented' },
+        });
+    });
 
     // ── Status ──────────────────────────────────────────────────────────────
     router.get('/status', (req, res) => {

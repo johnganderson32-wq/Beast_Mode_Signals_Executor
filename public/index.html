@@ -392,8 +392,9 @@
       <span class="h1-line2">Executor</span>
     </span>
   </h1>
-  <div class="status-item"><span class="dot dot-yellow" id="dot-auth"></span><span class="label" id="lbl-auth">ProjectX</span></div>
-  <div class="status-item"><span class="dot dot-yellow" id="dot-ngrok"></span><span class="label" id="lbl-ngrok">Ngrok</span></div>
+  <div class="status-item"><span class="dot dot-yellow" id="dot-auth"></span><span class="label">ProjectX</span></div>
+  <div class="status-item"><span class="dot dot-yellow" id="dot-rtc"></span><span class="label">RTC</span></div>
+  <div class="status-item"><span class="dot dot-yellow" id="dot-ngrok"></span><span class="label">Ngrok</span></div>
   <span class="atm-badge standard" id="atm-badge">Standard</span>
   <button class="ngrok-reveal-btn" id="ngrok-reveal-btn" onclick="toggleNgrokUrl()">URL</button>
   <span class="ngrok-url-text" id="ngrok-url">---</span>
@@ -872,6 +873,28 @@
 
   setInterval(pollStatus, 5000);
   pollStatus();
+
+  // ── Health dots ───────────────────────────────────────────────────────────
+  function setDot(id, connected) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'dot ' + (connected ? 'dot-green' : 'dot-yellow');
+  }
+
+  function pollHealth() {
+    fetch('/api/health').then(function(r) { return r.json(); }).then(function(h) {
+      setDot('dot-auth',  h.projectx && h.projectx.connected);
+      setDot('dot-ngrok', h.ngrok && h.ngrok.connected);
+      setDot('dot-rtc',   h.rtc && h.rtc.connected);
+    }).catch(function() {
+      setDot('dot-auth',  false);
+      setDot('dot-ngrok', false);
+      setDot('dot-rtc',   false);
+    });
+  }
+
+  setInterval(pollHealth, 15000);
+  pollHealth();
 
   // ── Settings load ─────────────────────────────────────────────────────────
   function loadSettings() {
