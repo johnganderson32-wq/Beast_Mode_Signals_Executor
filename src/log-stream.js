@@ -3,8 +3,6 @@
 // SSE log streaming — captures console output and broadcasts to connected dashboard clients
 
 const clients = [];
-const buffer  = [];
-const MAX_BUFFER = 500;
 
 function addClient(res) {
     res.writeHead(200, {
@@ -14,10 +12,7 @@ function addClient(res) {
     });
     res.write('\n');
 
-    // Send buffered lines so the client catches up
-    for (const line of buffer) {
-        res.write(`data: ${JSON.stringify(line)}\n\n`);
-    }
+    // No replay — Ctrl+R on the dashboard should start the log fresh.
 
     clients.push(res);
     res.on('close', () => {
@@ -34,8 +29,6 @@ function broadcast(line) {
 }
 
 function addLine(text) {
-    buffer.push(text);
-    if (buffer.length > MAX_BUFFER) buffer.shift();
     broadcast(text);
 }
 

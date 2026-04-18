@@ -45,6 +45,7 @@
     align-items: center;
     padding: 6px 12px;
     gap: 12px;
+    flex-wrap: wrap;
   }
   header h1 { font-size: 13px; color: var(--accent); letter-spacing: 0; display: flex; align-items: center; gap: 8px; font-family: -apple-system, 'Segoe UI', sans-serif; }
   header h1 .h1-text { display: flex; flex-direction: column; line-height: 1.15; }
@@ -92,6 +93,23 @@
   }
   .panel-body { padding: 14px; flex: 1; overflow-y: auto; }
 
+  /* ── BLOCK-REASON BANNER ── */
+  .block-banner {
+    display: none;
+    background: rgba(239,68,68,0.12);
+    border: 1px solid rgba(239,68,68,0.5);
+    color: var(--red);
+    font-weight: bold;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-align: center;
+    padding: 8px 10px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+  }
+  .block-banner.show { display: block; }
+  .block-banner .reason { font-size: 10px; font-weight: 400; color: var(--muted); display: block; margin-top: 3px; letter-spacing: 0.5px; }
+
   /* ── LEFT PANEL: TRADE + P&L ── */
   .trade-none { color: var(--muted); font-size: 12px; text-align: center; margin-top: 20px; }
 
@@ -124,6 +142,9 @@
   .pnl-pos { color: var(--green); }
   .pnl-neg { color: var(--red); }
   .pnl-zero { color: var(--muted); }
+
+  .streak-line { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .streak-line b { color: var(--yellow); }
 
   .btn-flatten {
     margin-top: 20px; width: 100%;
@@ -186,6 +207,15 @@
   .field-group input:focus, .field-group select:focus { border-color: var(--accent); }
   .field-hint { font-size: 10px; color: var(--muted); margin-top: 4px; }
 
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .toggle-pill {
+    padding: 5px 12px; border-radius: 4px; cursor: pointer;
+    font-family: var(--font); font-size: 10px; letter-spacing: 1px; border: 1px solid;
+    transition: all 0.15s; background: transparent;
+  }
+  .toggle-pill.on  { border-color: var(--green); color: var(--green); background: rgba(34,197,94,0.08); }
+  .toggle-pill.off { border-color: var(--muted); color: var(--muted); }
+
   .btn-save {
     background: var(--accent); border: none; color: #fff;
     font-family: var(--font); font-size: 12px; font-weight: bold;
@@ -243,6 +273,8 @@
   .modal-confirm:disabled { opacity: 0.35; cursor: default; }
 
   /* ── BIAS BUTTONS ── */
+  .bias-group { display: flex; align-items: center; gap: 3px; }
+  .bias-group .bias-lbl { font-size: 9px; color: var(--muted); font-weight: 600; margin-right: 2px; }
   .bias-btns { display: flex; gap: 2px; }
   .bias-btn {
     padding: 3px 6px; border-radius: 3px; cursor: pointer;
@@ -298,22 +330,6 @@
   .perf-table tr:last-child td { border-bottom: none; }
   .perf-table tr:hover td { background: rgba(255,255,255,0.02); }
 
-  /* ── P&L BAR CHART ── */
-  .pnl-chart {
-    display: flex; align-items: flex-end; gap: 3px;
-    height: 110px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 2px;
-  }
-  .pnl-bar-wrap {
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: flex-end; height: 100%; gap: 4px;
-    flex-shrink: 0; cursor: pointer;
-  }
-  .pnl-bar-wrap:hover .pnl-bar { opacity: 0.75; }
-  .pnl-bar { width: 28px; border-radius: 2px 2px 0 0; min-height: 2px; }
-  .pnl-bar.pos { background: var(--green); }
-  .pnl-bar.neg { background: var(--red); }
-  .pnl-bar-lbl { font-size: 8px; color: var(--muted); white-space: nowrap; }
-
   /* ── NET BY MONTH ── */
   .monthly-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -347,30 +363,15 @@
 
   /* ── MOBILE ── */
   @media (max-width: 768px) {
-    body {
-      height: auto;
-      min-height: 100vh;
-      overflow-y: auto;
-      grid-template-rows: auto auto;
-    }
-    header {
-      height: auto;
-      flex-wrap: wrap;
-      padding: 10px 14px;
-      gap: 10px 16px;
-    }
+    body { height: auto; min-height: 100vh; overflow-y: auto; grid-template-rows: auto auto; }
+    header { height: auto; flex-wrap: wrap; padding: 10px 14px; gap: 10px 16px; }
     header h1 { width: 100%; font-size: 13px; }
     .ngrok-reveal-btn, .ngrok-url-text { display: none; }
     .status-item .label { display: none; }
     .trade-toggle { font-size: 10px; padding: 6px 10px; }
     .tab-nav { margin-left: 0; width: 100%; gap: 6px; }
     .tab-btn  { flex: 1; text-align: center; font-size: 10px; padding: 7px 2px; }
-    main {
-      grid-template-columns: 1fr;
-      grid-template-rows: auto auto auto;
-      height: auto;
-      overflow: visible;
-    }
+    main { grid-template-columns: 1fr; grid-template-rows: auto auto auto; height: auto; overflow: visible; }
     main > .panel:nth-child(1) { order: 1; }
     main > .panel:nth-child(2) { order: 2; }
     main > .panel:nth-child(3) { order: 3; }
@@ -400,14 +401,32 @@
   <span class="ngrok-url-text" id="ngrok-url">---</span>
   <span class="sse-badge" id="sse-badge">SSE RECONNECTING</span>
   <button class="notif-btn" id="notif-btn" onclick="toggleMute()" title="Mute alerts">&#128276;</button>
-  <div style="display:flex;align-items:center;gap:3px;">
-    <span style="font-size:9px;color:var(--muted);font-weight:600;">NQ</span>
+
+  <div class="bias-group">
+    <span class="bias-lbl">NQ</span>
     <div class="bias-btns">
-      <button class="bias-btn bias-active-all" id="bias-nq-all"   onclick="setBias('NQ','ALL')">ALL</button>
-      <button class="bias-btn"                 id="bias-nq-long"  onclick="setBias('NQ','LONG')">LONG</button>
-      <button class="bias-btn"                 id="bias-nq-short" onclick="setBias('NQ','SHORT')">SHORT</button>
+      <button class="bias-btn" data-family="NQ" data-bias="ALL"   onclick="setBias('NQ','ALL')">ALL</button>
+      <button class="bias-btn" data-family="NQ" data-bias="LONG"  onclick="setBias('NQ','LONG')">L</button>
+      <button class="bias-btn" data-family="NQ" data-bias="SHORT" onclick="setBias('NQ','SHORT')">S</button>
     </div>
   </div>
+  <div class="bias-group">
+    <span class="bias-lbl">GC</span>
+    <div class="bias-btns">
+      <button class="bias-btn" data-family="GC" data-bias="ALL"   onclick="setBias('GC','ALL')">ALL</button>
+      <button class="bias-btn" data-family="GC" data-bias="LONG"  onclick="setBias('GC','LONG')">L</button>
+      <button class="bias-btn" data-family="GC" data-bias="SHORT" onclick="setBias('GC','SHORT')">S</button>
+    </div>
+  </div>
+  <div class="bias-group">
+    <span class="bias-lbl">ES</span>
+    <div class="bias-btns">
+      <button class="bias-btn" data-family="ES" data-bias="ALL"   onclick="setBias('ES','ALL')">ALL</button>
+      <button class="bias-btn" data-family="ES" data-bias="LONG"  onclick="setBias('ES','LONG')">L</button>
+      <button class="bias-btn" data-family="ES" data-bias="SHORT" onclick="setBias('ES','SHORT')">S</button>
+    </div>
+  </div>
+
   <button class="trade-toggle off" id="trade-toggle" onclick="toggleTrading()">TRADING OFF</button>
   <div class="tab-nav">
     <button class="tab-btn active" id="tab-btn-executor"    onclick="switchTab('executor')">EXECUTOR</button>
@@ -420,6 +439,11 @@
   <div class="panel">
     <div class="panel-title">Active Trade</div>
     <div class="panel-body">
+      <div class="block-banner" id="block-banner">
+        TRADING DISABLED
+        <span class="reason" id="block-reason">—</span>
+      </div>
+
       <div id="trade-area"><p class="trade-none">No active trade</p></div>
 
       <div class="signal-sep-line"></div>
@@ -428,16 +452,9 @@
 
       <div class="signal-sep-line"></div>
       <div class="pnl-block">
-        <div class="pnl-label" style="color:var(--accent)">BEAST MODE P&amp;L</div>
+        <div class="pnl-label" style="color:var(--accent)">BEAST MODE P&amp;L ($)</div>
         <div class="pnl-value pnl-zero" id="daily-pnl">$0.00</div>
-      </div>
-      <div class="pnl-block" style="margin-top:10px;">
-        <div class="pnl-label" style="color:var(--accent)">Signals Today</div>
-        <div style="display:flex;gap:14px;margin-top:5px;font-size:12px;">
-          <span><span style="color:var(--green);font-weight:bold;" id="sig-exec">0</span><span style="color:var(--muted);margin-left:3px;">exec</span></span>
-          <span><span style="color:var(--yellow);font-weight:bold;" id="sig-miss">0</span><span style="color:var(--muted);margin-left:3px;">missed</span></span>
-          <span><span style="color:var(--text);font-weight:bold;" id="sig-total">0</span><span style="color:var(--muted);margin-left:3px;">total</span></span>
-        </div>
+        <div class="streak-line">Streak: <b id="streak">0</b> &nbsp;·&nbsp; Signals: <span id="sig-exec">0</span>/<span id="sig-total">0</span></div>
       </div>
       <button class="btn-flatten" onclick="showFlattenModal()">FLATTEN</button>
     </div>
@@ -473,16 +490,10 @@
             <option value="CON.F.US.MNQ.U26">MNQ Sep 26 (U26)</option>
             <option value="CON.F.US.MNQ.Z26">MNQ Dec 26 (Z26)</option>
             <option value="CON.F.US.MNQ.H27">MNQ Mar 27 (H27)</option>
-            <option value="CON.F.US.MNQ.M27">MNQ Jun 27 (M27)</option>
-            <option value="CON.F.US.MNQ.U27">MNQ Sep 27 (U27)</option>
-            <option value="CON.F.US.MNQ.Z27">MNQ Dec 27 (Z27)</option>
             <option value="CON.F.US.ENQ.M26">ENQ Jun 26 (M26)</option>
             <option value="CON.F.US.ENQ.U26">ENQ Sep 26 (U26)</option>
             <option value="CON.F.US.ENQ.Z26">ENQ Dec 26 (Z26)</option>
             <option value="CON.F.US.ENQ.H27">ENQ Mar 27 (H27)</option>
-            <option value="CON.F.US.ENQ.M27">ENQ Jun 27 (M27)</option>
-            <option value="CON.F.US.ENQ.U27">ENQ Sep 27 (U27)</option>
-            <option value="CON.F.US.ENQ.Z27">ENQ Dec 27 (Z27)</option>
           </select>
         </div>
         <div class="field-group">
@@ -493,11 +504,6 @@
             <option value="CON.F.US.MGC.V26">MGC Oct 26 (V26)</option>
             <option value="CON.F.US.MGC.Z26">MGC Dec 26 (Z26)</option>
             <option value="CON.F.US.MGC.G27">MGC Feb 27 (G27)</option>
-            <option value="CON.F.US.MGC.J27">MGC Apr 27 (J27)</option>
-            <option value="CON.F.US.MGC.M27">MGC Jun 27 (M27)</option>
-            <option value="CON.F.US.MGC.Q27">MGC Aug 27 (Q27)</option>
-            <option value="CON.F.US.MGC.V27">MGC Oct 27 (V27)</option>
-            <option value="CON.F.US.MGC.Z27">MGC Dec 27 (Z27)</option>
           </select>
         </div>
         <div class="field-group">
@@ -507,17 +513,13 @@
             <option value="CON.F.US.MES.M26">MES Jun 26 (M26)</option>
             <option value="CON.F.US.MES.U26">MES Sep 26 (U26)</option>
             <option value="CON.F.US.MES.Z26">MES Dec 26 (Z26)</option>
-            <option value="CON.F.US.MES.H27">MES Mar 27 (H27)</option>
-            <option value="CON.F.US.MES.M27">MES Jun 27 (M27)</option>
             <option value="CON.F.US.ES.M26">ES Jun 26 (M26)</option>
             <option value="CON.F.US.ES.U26">ES Sep 26 (U26)</option>
-            <option value="CON.F.US.ES.Z26">ES Dec 26 (Z26)</option>
-            <option value="CON.F.US.ES.H27">ES Mar 27 (H27)</option>
-            <option value="CON.F.US.ES.M27">ES Jun 27 (M27)</option>
           </select>
         </div>
+
         <div class="field-group">
-          <label>NQ Contracts Per Trade</label>
+          <label>ENQ Contracts Per Trade</label>
           <input type="number" id="s-nq-contracts" min="0" max="20">
         </div>
         <div class="field-group">
@@ -541,20 +543,34 @@
           <label>MES Contracts Per Trade</label>
           <input type="number" id="s-mes-contracts" min="0" max="20">
         </div>
+
         <div class="field-group">
-          <label>Daily Loss Cap (Points)</label>
+          <label>Daily Loss Cap ($)</label>
           <input type="number" id="s-loss-cap" min="0" step="1">
-          <div class="field-hint">0 = disabled</div>
+          <div class="field-hint">0 = disabled. Hitting the cap disables trading for the session.</div>
         </div>
         <div class="field-group">
-          <label>Daily Profit Cap (Points)</label>
+          <label>Daily Profit Cap ($)</label>
           <input type="number" id="s-profit-cap" min="0" step="1">
-          <div class="field-hint">0 = disabled</div>
+          <div class="field-hint">0 = disabled. Hitting the cap disables trading for the session.</div>
         </div>
+        <div class="field-group">
+          <div class="toggle-row">
+            <label style="margin:0">Dynamic Sizing</label>
+            <button type="button" class="toggle-pill off" id="s-dynamic-toggle" onclick="toggleDynamicSizing()">OFF</button>
+          </div>
+          <div class="field-hint">When ON, qty is computed from Per-Trade Loss Cap &divide; (SL pts &times; $/pt)</div>
+        </div>
+        <div class="field-group">
+          <label>Per Trade Loss Cap ($)</label>
+          <input type="number" id="s-ptlc" min="0" step="1">
+          <div class="field-hint">Applied when Dynamic Sizing is ON — max dollar risk per trade.</div>
+        </div>
+
         <div class="field-group">
           <label>Session Close (ET)</label>
           <input type="text" id="s-session-close" placeholder="16:49">
-          <div class="field-hint">No new entries after this time (HH:MM)</div>
+          <div class="field-hint">Hard stop HH:MM. No new entries until 18:00 ET Globex reopen.</div>
         </div>
         <div class="field-group">
           <label>Consecutive Loss Limit</label>
@@ -570,14 +586,11 @@
           <label>ATM Strategy</label>
           <select id="s-atm-strategy">
             <option value="standard">Standard</option>
-            <option value="momentum">Momentum</option>
+            <option value="momentum">Momentum (not yet enabled)</option>
           </select>
+          <div class="field-hint">Momentum requires RTC quote feed — coming soon.</div>
         </div>
-        <div class="field-group">
-          <label>Per Trade Loss Cap (Points)</label>
-          <input type="number" id="s-ptlc" min="0" step="1">
-          <div class="field-hint">0 = dynamic</div>
-        </div>
+
         <button type="submit" class="btn-save">SAVE SETTINGS</button>
         <div class="save-msg" id="save-msg"></div>
       </form>
@@ -591,32 +604,27 @@
     <div class="stat-card"><span class="sc-label">Win Rate</span><span class="sc-value" id="p-winrate">---</span></div>
     <div class="stat-card"><span class="sc-label">Expectancy</span><span class="sc-value" id="p-expect">---</span></div>
     <div class="stat-card"><span class="sc-label">Profit Factor</span><span class="sc-value" id="p-pf">---</span></div>
-    <div class="stat-card"><span class="sc-label">Net Points</span><span class="sc-value" id="p-net">---</span></div>
+    <div class="stat-card"><span class="sc-label">Net $</span><span class="sc-value" id="p-net">---</span></div>
     <div class="stat-card"><span class="sc-label">Wins</span><span class="sc-value" style="color:var(--green)" id="p-wins">---</span></div>
     <div class="stat-card"><span class="sc-label">Losses</span><span class="sc-value" style="color:var(--red)" id="p-losses">---</span></div>
   </div>
 
-  <!-- P&L Bar Chart -->
-  <div class="pnl-chart" id="p-chart"></div>
-
-  <!-- Trade History Table -->
   <div class="perf-table-wrap">
     <table class="perf-table">
       <thead>
         <tr>
-          <th>ID</th><th>Time</th><th>Instrument</th><th>Dir</th>
+          <th>ID</th><th>Time</th><th>Instrument</th><th>Dir</th><th>Qty</th>
           <th>Entry</th><th>SL</th><th>TP1</th><th>Target</th>
           <th>rDist</th><th>Comp%</th><th>Hour</th><th>Transition</th>
-          <th>Status</th><th>Exit</th><th>R</th><th>Pts</th><th>Action</th>
+          <th>Status</th><th>Exit</th><th>R</th><th>Pts</th><th>$</th><th>Action</th>
         </tr>
       </thead>
       <tbody id="p-tbody"></tbody>
     </table>
   </div>
 
-  <!-- Net by Month -->
   <div style="margin-top:24px;">
-    <div style="font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:10px;">Net by Month</div>
+    <div style="font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:10px;">Net by Month ($)</div>
     <div class="monthly-grid" id="p-monthly"></div>
   </div>
 </div>
@@ -624,8 +632,8 @@
 <!-- Flatten Modal -->
 <div class="modal-overlay" id="flatten-modal">
   <div class="modal-box">
-    <div class="modal-title" id="modal-flatten-title">FLATTEN ALL</div>
-    <div class="modal-sub">Close all open positions and cancel orders</div>
+    <div class="modal-title">FLATTEN ALL</div>
+    <div class="modal-sub">Cancel working orders + market-close open positions on ProjectX</div>
     <div class="modal-timer" id="modal-countdown">3</div>
     <div class="modal-actions">
       <button class="modal-cancel" onclick="hideFlattenModal()">CANCEL</button>
@@ -638,19 +646,13 @@
   // ── Sound / browser notifications ────────────────────────────────────────
   var audioCtx = null;
   var isMuted  = localStorage.getItem('beast_muted') === 'true';
-
-  function getAudioCtx() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    return audioCtx;
-  }
+  function getAudioCtx() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx; }
   function playTone(freqs, durs) {
     if (isMuted) return;
     try {
-      var ctx = getAudioCtx();
-      var t = ctx.currentTime;
+      var ctx = getAudioCtx(); var t = ctx.currentTime;
       freqs.forEach(function(freq, i) {
-        var osc  = ctx.createOscillator();
-        var gain = ctx.createGain();
+        var osc = ctx.createOscillator(), gain = ctx.createGain();
         osc.connect(gain); gain.connect(ctx.destination);
         osc.type = 'sine'; osc.frequency.setValueAtTime(freq, t);
         gain.gain.setValueAtTime(0.25, t);
@@ -662,19 +664,13 @@
   }
   function playEntry() { playTone([523, 659, 784], [0.08, 0.08, 0.18]); }
   function playTP()    { playTone([784, 987],       [0.12, 0.28]); }
-  function playSL()    { playTone([784, 523, 392],   [0.08, 0.08, 0.22]); }
+  function playSL()    { playTone([784, 523, 392],  [0.08, 0.08, 0.22]); }
 
   function toggleNgrokUrl() {
     var el  = document.getElementById('ngrok-url');
     var btn = document.getElementById('ngrok-reveal-btn');
-    if (el.style.display === 'block') {
-      el.style.display = 'none';
-      btn.textContent  = 'URL';
-    } else {
-      el.textContent   = el.dataset.url || '---';
-      el.style.display = 'block';
-      btn.textContent  = 'HIDE';
-    }
+    if (el.style.display === 'block') { el.style.display = 'none'; btn.textContent  = 'URL'; }
+    else { el.textContent = el.dataset.url || '---'; el.style.display = 'block'; btn.textContent = 'HIDE'; }
   }
 
   function toggleMute() {
@@ -685,16 +681,13 @@
     btn.className = 'notif-btn' + (isMuted ? ' muted' : '');
     btn.title     = isMuted ? 'Unmute alerts' : 'Mute alerts';
   }
-  // Init mute button state
   (function() {
     var btn = document.getElementById('notif-btn');
     if (isMuted) { btn.innerHTML = '&#128263;'; btn.className = 'notif-btn muted'; btn.title = 'Unmute alerts'; }
   })();
 
   // ── SSE log feed ──────────────────────────────────────────────────────────
-  var logEl  = document.getElementById('log');
-  var MAX_LINES = 500;
-  var lineCount = 0;
+  var logEl = document.getElementById('log'), MAX_LINES = 500, lineCount = 0;
 
   function tagClass(line) {
     if (line.indexOf('[ERR]') !== -1)       return 'err';
@@ -707,25 +700,17 @@
     return '';
   }
 
-  // ── Log filter ─────────────────────────────────────────────────────────────
   var activeLogFilters = new Set(['all']);
-
   function toggleLogFilter(filter) {
-    if (filter === 'all') {
-      activeLogFilters.clear();
-      activeLogFilters.add('all');
-    } else {
+    if (filter === 'all') { activeLogFilters.clear(); activeLogFilters.add('all'); }
+    else {
       activeLogFilters.delete('all');
       if (activeLogFilters.has(filter)) {
         activeLogFilters.delete(filter);
         if (activeLogFilters.size === 0) activeLogFilters.add('all');
-      } else {
-        activeLogFilters.add(filter);
-      }
+      } else activeLogFilters.add(filter);
     }
-    document.querySelectorAll('.log-filter-btn').forEach(function(btn) {
-      btn.classList.toggle('active', activeLogFilters.has(btn.dataset.f));
-    });
+    document.querySelectorAll('.log-filter-btn').forEach(function(btn) { btn.classList.toggle('active', activeLogFilters.has(btn.dataset.f)); });
     applyLogFilter();
   }
 
@@ -740,40 +725,23 @@
   }
 
   function appendLog(line) {
-    var div = document.createElement('div');
-    var cls = tagClass(line);
+    var div = document.createElement('div'), cls = tagClass(line);
     div.className = 'log-line ' + cls;
     div.textContent = line;
-    if (!activeLogFilters.has('all')) {
-      div.style.display = (cls && activeLogFilters.has(cls)) ? '' : 'none';
-    }
+    if (!activeLogFilters.has('all')) div.style.display = (cls && activeLogFilters.has(cls)) ? '' : 'none';
     logEl.appendChild(div);
     lineCount++;
-    if (lineCount > MAX_LINES) {
-      logEl.removeChild(logEl.firstChild);
-      lineCount--;
-    }
-    if (activeLogFilters.has('all') || div.style.display !== 'none') {
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-    // Sound triggers
-    if (cls === 'entry' && line.indexOf('entry=') !== -1) {
-      playEntry();
-    } else if (line.indexOf('TP1') !== -1 && line.indexOf('filled') !== -1) {
-      playTP();
-    } else if (line.indexOf('SL hit') !== -1 || line.indexOf('STOPPED') !== -1) {
-      playSL();
-    }
-    // Trigger immediate status refresh on trade events
+    if (lineCount > MAX_LINES) { logEl.removeChild(logEl.firstChild); lineCount--; }
+    if (activeLogFilters.has('all') || div.style.display !== 'none') logEl.scrollTop = logEl.scrollHeight;
+    if (cls === 'entry' && line.indexOf('entry=') !== -1) playEntry();
+    else if (line.indexOf('TP1') !== -1 && line.indexOf('filled') !== -1) playTP();
+    else if (line.indexOf('SL hit') !== -1 || line.indexOf('STOPPED') !== -1) playSL();
     if (line.indexOf('[ENTRY]') !== -1 || line.indexOf('closed') !== -1 ||
         line.indexOf('STOPPED') !== -1 || line.indexOf('TP1') !== -1 ||
-        line.indexOf('TARGET') !== -1) {
-      pollStatus();
-    }
+        line.indexOf('TARGET') !== -1 || line.indexOf('[FLATTEN]') !== -1) pollStatus();
   }
 
-  var sseBadge = document.getElementById('sse-badge');
-  var esConn = null;
+  var sseBadge = document.getElementById('sse-badge'), esConn = null;
   function createSSE() {
     if (esConn) { try { esConn.close(); } catch(x) {} }
     var conn = new EventSource('/api/log/stream');
@@ -784,7 +752,6 @@
   }
   createSSE();
 
-  // iOS / backgrounding reconnect
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {
       if (!esConn || esConn.readyState === EventSource.CLOSED) createSSE();
@@ -792,40 +759,68 @@
     }
   });
 
+  // ── BLOCK-REASON BANNER ──────────────────────────────────────────────────
+  var BLOCK_LABELS = {
+    trading_disabled:      'Toggle is OFF',
+    daily_loss_cap:        'Daily loss cap hit',
+    daily_profit_cap:      'Daily profit cap hit',
+    session_closed:        'Past session close — resumes 18:00 ET',
+    per_trade_loss_cap:    'Trade risk exceeds Per-Trade Loss Cap',
+    max_positions_nq:      'NQ position already open (no hedging)',
+    max_positions_gc:      'GC position already open (no hedging)',
+    max_positions_es:      'ES position already open (no hedging)',
+  };
+
+  function renderBlockBanner(br) {
+    var banner = document.getElementById('block-banner');
+    var txt    = document.getElementById('block-reason');
+    if (!br) { banner.classList.remove('show'); return; }
+    banner.classList.add('show');
+    var label = BLOCK_LABELS[br.reason] || br.reason.replace(/_/g, ' ');
+    if (br.reason === 'trading_disabled' && br.resumeAt) {
+      var mins = Math.max(0, Math.ceil((br.resumeAt - Date.now()) / 60000));
+      label = 'Circuit breaker — resumes in ' + mins + 'm';
+    }
+    txt.textContent = label;
+  }
+
   // ── Status polling ────────────────────────────────────────────────────────
   function pollStatus() {
     fetch('/api/status').then(function(r) { return r.json(); }).then(function(s) {
-      // Trading toggle
       var btn = document.getElementById('trade-toggle');
       btn.textContent = s.tradingEnabled ? 'TRADING ON' : 'TRADING OFF';
       btn.className   = 'trade-toggle ' + (s.tradingEnabled ? 'on' : 'off');
 
-      // ATM badge
       var atmBadge = document.getElementById('atm-badge');
       var mode = (s.settings && s.settings.atmStrategy) || 'standard';
       atmBadge.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
       atmBadge.className   = 'atm-badge ' + mode;
 
-      // Bias buttons
-      var bias = s.nqBias || 'ALL';
-      ['all', 'long', 'short'].forEach(function(b) {
-        var bb = document.getElementById('bias-nq-' + b);
-        if (bb) bb.className = 'bias-btn' + (bias.toLowerCase() === b ? ' bias-active-' + b : '');
+      // Per-family bias
+      var bias = s.bias || {};
+      document.querySelectorAll('.bias-btn').forEach(function(b) {
+        var fam = b.dataset.family, val = b.dataset.bias;
+        var active = (bias[fam] || 'ALL') === val;
+        b.className = 'bias-btn' + (active ? ' bias-active-' + val.toLowerCase() : '');
       });
 
-      // Daily P&L
+      // Daily P&L (dollars)
       var pnlEl = document.getElementById('daily-pnl');
-      var pnl   = s.dailyPnl || 0;
-      pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' pts';
+      var pnl = s.dailyPnl || 0;
+      pnlEl.textContent = (pnl >= 0 ? '+' : '-') + '$' + Math.abs(pnl).toFixed(2);
       pnlEl.className   = 'pnl-value ' + (pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-zero');
 
-      // Signals today
-      document.getElementById('sig-total').textContent = s.signalsToday || 0;
+      // Streak + signal counts
+      document.getElementById('streak').textContent    = s.consecutiveLosses || 0;
+      var sc = s.signalCounts || {};
+      document.getElementById('sig-exec').textContent  = sc.executed || 0;
+      document.getElementById('sig-total').textContent = sc.total    || 0;
 
-      // Active trade
+      // Block-reason banner
+      renderBlockBanner(s.blockReason || null);
+
+      // Active trade + last trade
       renderActiveTrade(s.activeTrade);
-
-      // Last trade
       renderLastTrade(s.lastTrade);
     }).catch(function() {});
   }
@@ -833,29 +828,28 @@
   function renderActiveTrade(t) {
     var el = document.getElementById('trade-area');
     if (!t) { el.innerHTML = '<p class="trade-none">No active trade</p>'; return; }
-    var dir = String(t.direction).toLowerCase();
-    var isBuy = dir === 'bullish';
+    var dir = String(t.direction).toLowerCase(), isBuy = dir === 'bullish';
     el.innerHTML =
       '<div class="trade-card">' +
         '<div><span class="symbol">' + t.instrument + '</span>' +
-        '<span class="side ' + (isBuy ? 'side-buy' : 'side-sell') + '">' + (isBuy ? 'BUY' : 'SELL') + '</span></div>' +
+        '<span class="side ' + (isBuy ? 'side-buy' : 'side-sell') + '">' + (isBuy ? 'BUY' : 'SELL') + '</span>' +
+        (t.qty ? '<span style="margin-left:6px;color:var(--muted);font-size:11px">' + t.qty + 'ct</span>' : '') +
+        '</div>' +
         '<div class="trade-row"><span class="lbl">Entry</span><span>' + t.entryPrice + '</span></div>' +
         '<div class="trade-row"><span class="lbl">SL</span><span style="color:var(--red)">' + t.stop + '</span></div>' +
         '<div class="trade-row"><span class="lbl">TP1</span><span style="color:var(--green)">' + t.tp1 + '</span></div>' +
         '<div class="trade-row"><span class="lbl">Target</span><span style="color:var(--green)">' + t.target + '</span></div>' +
         (t.rDist ? '<div class="trade-row"><span class="lbl">rDist</span><span>' + t.rDist + '</span></div>' : '') +
-        (t.compression ? '<div class="trade-row"><span class="lbl">Compression</span><span>' + t.compression + '%</span></div>' : '') +
       '</div>';
   }
 
   function renderLastTrade(t) {
     var el = document.getElementById('last-trade-area');
     if (!t) { el.innerHTML = '<p class="trade-none" style="margin-top:0">No trades today</p>'; return; }
-    var dir = String(t.direction).toLowerCase();
-    var isBuy = dir === 'bullish';
+    var dir = String(t.direction).toLowerCase(), isBuy = dir === 'bullish';
     var statusCls = t.status === 'TP1' || t.status === 'TARGET' ? 'oc-tp1' :
                     t.status === 'STOPPED' ? 'oc-stopped' : 'oc-manual';
-    var pnl = t.pnlPoints || 0;
+    var pnl = t.pnlDollars || 0;
     var pnlColor = pnl > 0 ? 'var(--green)' : pnl < 0 ? 'var(--red)' : 'var(--muted)';
     el.innerHTML =
       '<div class="trade-card">' +
@@ -865,7 +859,7 @@
           '<span class="outcome-badge ' + statusCls + '">' + t.status + '</span>' +
         '</div>' +
         '<div style="font-size:22px;font-weight:bold;text-align:center;margin:8px 0;color:' + pnlColor + '">' +
-          (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' pts' +
+          (pnl >= 0 ? '+' : '-') + '$' + Math.abs(pnl).toFixed(2) +
         '</div>' +
         (t.rMultiple != null ? '<div class="trade-row"><span class="lbl">R-Multiple</span><span>' + t.rMultiple.toFixed(2) + 'R</span></div>' : '') +
       '</div>';
@@ -880,42 +874,50 @@
     if (!el) return;
     el.className = 'dot ' + (connected ? 'dot-green' : 'dot-yellow');
   }
-
   function pollHealth() {
     fetch('/api/health').then(function(r) { return r.json(); }).then(function(h) {
       setDot('dot-auth',  h.projectx && h.projectx.connected);
       setDot('dot-ngrok', h.ngrok && h.ngrok.connected);
       setDot('dot-rtc',   h.rtc && h.rtc.connected);
+      var urlEl = document.getElementById('ngrok-url');
+      if (h.ngrok && h.ngrok.url) urlEl.dataset.url = h.ngrok.url;
     }).catch(function() {
-      setDot('dot-auth',  false);
-      setDot('dot-ngrok', false);
-      setDot('dot-rtc',   false);
+      setDot('dot-auth', false); setDot('dot-ngrok', false); setDot('dot-rtc', false);
     });
   }
-
   setInterval(pollHealth, 15000);
   pollHealth();
 
   // ── Settings load ─────────────────────────────────────────────────────────
+  var dynamicOn = false;
+  function setDynamicPill(on) {
+    dynamicOn = !!on;
+    var btn = document.getElementById('s-dynamic-toggle');
+    btn.textContent = dynamicOn ? 'ON' : 'OFF';
+    btn.className   = 'toggle-pill ' + (dynamicOn ? 'on' : 'off');
+  }
+  function toggleDynamicSizing() { setDynamicPill(!dynamicOn); }
+
   function loadSettings() {
     fetch('/api/settings').then(function(r) { return r.json(); }).then(function(s) {
-      document.getElementById('s-account').value      = s.accountId      || '';
-      document.getElementById('s-nq-contract').value   = s.nqContractId   || '';
-      document.getElementById('s-gc-contract').value   = s.gcContractId   || '';
-      document.getElementById('s-es-contract').value   = s.esContractId   || '';
-      document.getElementById('s-nq-contracts').value  = s.nqContracts    ?? '';
-      document.getElementById('s-mnq-contracts').value = s.mnqContracts   ?? '';
-      document.getElementById('s-gc-contracts').value  = s.gcContracts    ?? '';
-      document.getElementById('s-mgc-contracts').value = s.mgcContracts   ?? '';
-      document.getElementById('s-es-contracts').value  = s.esContracts    ?? '';
-      document.getElementById('s-mes-contracts').value = s.mesContracts   ?? '';
-      document.getElementById('s-loss-cap').value      = s.dailyLossCap   || '';
-      document.getElementById('s-profit-cap').value    = s.dailyProfitCap || '';
-      document.getElementById('s-session-close').value = s.sessionClose   || '';
+      document.getElementById('s-account').value       = s.accountId       || '';
+      document.getElementById('s-nq-contract').value   = s.nqContractId    || '';
+      document.getElementById('s-gc-contract').value   = s.gcContractId    || '';
+      document.getElementById('s-es-contract').value   = s.esContractId    || '';
+      document.getElementById('s-nq-contracts').value  = s.nqContracts     ?? '';
+      document.getElementById('s-mnq-contracts').value = s.mnqContracts    ?? '';
+      document.getElementById('s-gc-contracts').value  = s.gcContracts     ?? '';
+      document.getElementById('s-mgc-contracts').value = s.mgcContracts    ?? '';
+      document.getElementById('s-es-contracts').value  = s.esContracts     ?? '';
+      document.getElementById('s-mes-contracts').value = s.mesContracts    ?? '';
+      document.getElementById('s-loss-cap').value      = s.dailyLossCap    || '';
+      document.getElementById('s-profit-cap').value    = s.dailyProfitCap  || '';
+      document.getElementById('s-session-close').value = s.sessionClose    || '';
       document.getElementById('s-consec-loss').value   = s.consecutiveLossLimit || '';
-      document.getElementById('s-pause-dur').value     = s.pauseDuration  || '';
-      document.getElementById('s-atm-strategy').value  = s.atmStrategy    || 'standard';
+      document.getElementById('s-pause-dur').value     = s.pauseDuration   || '';
+      document.getElementById('s-atm-strategy').value  = s.atmStrategy     || 'standard';
       document.getElementById('s-ptlc').value          = s.perTradeLossCap || '';
+      setDynamicPill(!!s.dynamicSizing);
     }).catch(function() {});
   }
   loadSettings();
@@ -927,19 +929,20 @@
       nqContractId:         document.getElementById('s-nq-contract').value,
       gcContractId:         document.getElementById('s-gc-contract').value,
       esContractId:         document.getElementById('s-es-contract').value,
-      nqContracts:          parseInt(document.getElementById('s-nq-contracts').value) || 0,
+      nqContracts:          parseInt(document.getElementById('s-nq-contracts').value)  || 0,
       mnqContracts:         parseInt(document.getElementById('s-mnq-contracts').value) || 0,
-      gcContracts:          parseInt(document.getElementById('s-gc-contracts').value) || 0,
+      gcContracts:          parseInt(document.getElementById('s-gc-contracts').value)  || 0,
       mgcContracts:         parseInt(document.getElementById('s-mgc-contracts').value) || 0,
-      esContracts:          parseInt(document.getElementById('s-es-contracts').value) || 0,
+      esContracts:          parseInt(document.getElementById('s-es-contracts').value)  || 0,
       mesContracts:         parseInt(document.getElementById('s-mes-contracts').value) || 0,
-      dailyLossCap:         parseInt(document.getElementById('s-loss-cap').value) || 0,
-      dailyProfitCap:       parseInt(document.getElementById('s-profit-cap').value) || 0,
+      dailyLossCap:         parseFloat(document.getElementById('s-loss-cap').value)   || 0,
+      dailyProfitCap:       parseFloat(document.getElementById('s-profit-cap').value) || 0,
+      perTradeLossCap:      parseFloat(document.getElementById('s-ptlc').value)       || 0,
       sessionClose:         document.getElementById('s-session-close').value.trim(),
       consecutiveLossLimit: parseInt(document.getElementById('s-consec-loss').value) || 0,
-      pauseDuration:        parseInt(document.getElementById('s-pause-dur').value) || 0,
+      pauseDuration:        parseInt(document.getElementById('s-pause-dur').value)   || 0,
       atmStrategy:          document.getElementById('s-atm-strategy').value,
-      perTradeLossCap:      parseInt(document.getElementById('s-ptlc').value) || 0,
+      dynamicSizing:        dynamicOn,
     };
     var msgEl = document.getElementById('save-msg');
     fetch('/api/settings', {
@@ -950,23 +953,20 @@
       msgEl.textContent = data.ok ? 'Settings saved' : 'Error: ' + (data.error || 'Unknown');
       msgEl.className   = 'save-msg' + (data.ok ? '' : ' err');
     }).catch(function() {
-      msgEl.textContent = 'Network error';
-      msgEl.className   = 'save-msg err';
+      msgEl.textContent = 'Network error'; msgEl.className = 'save-msg err';
     });
     setTimeout(function() { msgEl.textContent = ''; }, 3000);
   }
 
-  // ── Trading toggle ────────────────────────────────────────────────────────
   function toggleTrading() {
     fetch('/api/trading/toggle', { method: 'POST' }).then(function() { pollStatus(); });
   }
 
-  // ── Direction bias lock ───────────────────────────────────────────────────
-  function setBias(instrument, val) {
+  function setBias(family, val) {
     fetch('/api/bias', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ instrument: instrument, bias: val }),
+      body: JSON.stringify({ instrument: family, bias: val }),
     }).then(function() { pollStatus(); });
   }
 
@@ -1013,33 +1013,30 @@
   // ── Performance Tab ───────────────────────────────────────────────────────
   function pollPerformance() {
     fetch('/api/stats').then(function(r) { return r.json(); }).then(function(s) {
-      document.getElementById('p-total').textContent   = s.trades || '---';
-      document.getElementById('p-winrate').textContent  = s.winRate != null ? s.winRate + '%' : '---';
-      document.getElementById('p-expect').textContent   = s.expectancy != null ? (s.expectancy >= 0 ? '+' : '') + s.expectancy.toFixed(2) : '---';
-      document.getElementById('p-pf').textContent       = s.profitFactor != null ? s.profitFactor.toFixed(2) + 'x' : '---';
-      document.getElementById('p-net').textContent      = s.netPoints != null ? (s.netPoints >= 0 ? '+' : '') + s.netPoints.toFixed(2) : '---';
-      document.getElementById('p-wins').textContent     = s.wins != null ? s.wins : '---';
-      document.getElementById('p-losses').textContent   = s.losses != null ? s.losses : '---';
+      document.getElementById('p-total').textContent   = s.trades       || '---';
+      document.getElementById('p-winrate').textContent = s.winRate      != null ? s.winRate + '%' : '---';
+      document.getElementById('p-expect').textContent  = s.expectancy   != null ? (s.expectancy  >= 0 ? '+' : '') + s.expectancy.toFixed(2)  + 'R' : '---';
+      document.getElementById('p-pf').textContent      = s.profitFactor != null ? s.profitFactor.toFixed(2) + 'x' : '---';
+      document.getElementById('p-net').textContent     = s.netDollars   != null ? (s.netDollars  >= 0 ? '+$' : '-$') + Math.abs(s.netDollars).toFixed(2)  : '---';
+      document.getElementById('p-wins').textContent    = s.wins         != null ? s.wins   : '---';
+      document.getElementById('p-losses').textContent  = s.losses       != null ? s.losses : '---';
 
-      // Net by month
       var monthlyEl = document.getElementById('p-monthly');
       if (s.monthly && Object.keys(s.monthly).length > 0) {
         monthlyEl.innerHTML = Object.keys(s.monthly).sort().map(function(mo) {
-          var val = s.monthly[mo];
-          var color = val > 0 ? 'var(--green)' : val < 0 ? 'var(--red)' : 'var(--muted)';
+          var val = s.monthly[mo], color = val > 0 ? 'var(--green)' : val < 0 ? 'var(--red)' : 'var(--muted)';
           return '<div class="month-card"><div class="mc-label">' + mo + '</div><div class="mc-value" style="color:' + color + '">' +
-            (val >= 0 ? '+' : '') + val.toFixed(2) + '</div></div>';
+            (val >= 0 ? '+$' : '-$') + Math.abs(val).toFixed(2) + '</div></div>';
         }).join('');
       } else {
         monthlyEl.innerHTML = '<p class="perf-no-data">No monthly data yet</p>';
       }
     }).catch(function() {});
 
-    // Trade history table
     fetch('/api/trades').then(function(r) { return r.json(); }).then(function(trades) {
       var tbody = document.getElementById('p-tbody');
       if (!trades.length) {
-        tbody.innerHTML = '<tr><td colspan="17" class="perf-no-data">No trades yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="19" class="perf-no-data">No trades yet</td></tr>';
         return;
       }
       tbody.innerHTML = trades.slice().reverse().map(function(t) {
@@ -1048,10 +1045,11 @@
         var statusColor = (t.status === 'TP1' || t.status === 'TARGET') ? 'var(--green)' :
                           t.status === 'STOPPED' ? 'var(--red)' :
                           t.status === 'OPEN' ? 'var(--accent)' : 'var(--yellow)';
-        var pnlPts = t.pnlPoints != null ? t.pnlPoints.toFixed(2) : '---';
-        var pnlColor = t.pnlPoints > 0 ? 'var(--green)' : t.pnlPoints < 0 ? 'var(--red)' : 'var(--muted)';
+        var pnlPts = t.pnlPoints  != null ? t.pnlPoints.toFixed(2)  : '---';
+        var pnlUsd = t.pnlDollars != null ? (t.pnlDollars >= 0 ? '+$' : '-$') + Math.abs(t.pnlDollars).toFixed(2) : '---';
+        var pnlColor = t.pnlDollars > 0 ? 'var(--green)' : t.pnlDollars < 0 ? 'var(--red)' : 'var(--muted)';
         var rMult = t.rMultiple != null ? t.rMultiple.toFixed(2) + 'R' : '---';
-        var time = t.timestamp ? t.timestamp.slice(11, 19) : '---';
+        var time  = t.timestamp ? t.timestamp.slice(11, 19) : '---';
         var actionHtml = '';
         if (t.status === 'OPEN') {
           actionHtml = '<div class="manual-outcome">' +
@@ -1067,25 +1065,26 @@
           '<td>' + time + '</td>' +
           '<td>' + t.instrument + '</td>' +
           '<td style="color:' + dirColor + '">' + (dir === 'bullish' ? 'BUY' : 'SELL') + '</td>' +
+          '<td>' + (t.qty || '---') + '</td>' +
           '<td>' + t.entryPrice + '</td>' +
           '<td style="color:var(--red)">' + t.stop + '</td>' +
           '<td style="color:var(--green)">' + t.tp1 + '</td>' +
           '<td style="color:var(--green)">' + t.target + '</td>' +
           '<td>' + (t.rDist || '---') + '</td>' +
           '<td>' + (t.compression != null ? t.compression + '%' : '---') + '</td>' +
-          '<td>' + (t.entryHour != null ? t.entryHour : '---') + '</td>' +
+          '<td>' + (t.entryHour   != null ? t.entryHour   : '---') + '</td>' +
           '<td>' + (t.macroTransition || '---') + '</td>' +
           '<td style="color:' + statusColor + '">' + t.status + '</td>' +
           '<td>' + (t.exitPrice != null ? t.exitPrice : '---') + '</td>' +
           '<td>' + rMult + '</td>' +
-          '<td style="color:' + pnlColor + '">' + pnlPts + '</td>' +
+          '<td>' + pnlPts + '</td>' +
+          '<td style="color:' + pnlColor + '">' + pnlUsd + '</td>' +
           '<td>' + actionHtml + '</td>' +
           '</tr>';
       }).join('');
     }).catch(function() {});
   }
 
-  // ── Manual outcome entry ──────────────────────────────────────────────────
   function resolveManual(id) {
     var status    = document.getElementById('mo-status-' + id).value;
     var exitPrice = document.getElementById('mo-exit-' + id).value;
@@ -1093,10 +1092,7 @@
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: status, exitPrice: exitPrice || null }),
-    }).then(function() {
-      pollPerformance();
-      pollStatus();
-    });
+    }).then(function() { pollPerformance(); pollStatus(); });
   }
 </script>
 </body>

@@ -1,0 +1,15 @@
+{
+  "instrument":      "NQ",
+  "direction":       "bullish",
+  "action":          "ENTRY",
+  "setup":           "BEAST",
+  "price":           21500.25,
+  "stop":            21450.25,
+  "tp1":             21525.25,
+  "target":          21550.25,
+  "rDist":           50,
+  "compression":     38,
+  "entryHour":       11,
+  "macroTransition": "M2_to_M3",
+  "h4ZoneId":        "pending"
+}

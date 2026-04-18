@@ -11,7 +11,10 @@ function insert(trade) {
         id:              nextId++,
         timestamp:       new Date().toISOString(),
         instrument:      trade.instrument,
+        family:          trade.family          || null,
+        contractId:      trade.contractId      || null,
         direction:       trade.direction,
+        qty:             trade.qty             || null,
         entryPrice:      trade.entryPrice,
         stop:            trade.stop,
         tp1:             trade.tp1,
@@ -21,11 +24,13 @@ function insert(trade) {
         entryHour:       trade.entryHour,
         macroTransition: trade.macroTransition,
         h4ZoneId:        trade.h4ZoneId,
-        status:          'OPEN',   // OPEN | TP1 | TARGET | STOPPED | MANUAL
+        status:          'OPEN',    // OPEN | TP1 | TARGET | STOPPED | MANUAL
         exitPrice:       null,
         exitTime:        null,
         rMultiple:       null,
         pnlPoints:       null,
+        pnlDollars:      null,
+        orderIds:        trade.orderIds || {}, // { entry, sl, tp1, target }
     };
     trades.push(record);
     return record;
@@ -46,11 +51,15 @@ function getOpen() {
     return trades.filter(t => t.status === 'OPEN');
 }
 
+function getById(id) {
+    return trades.find(t => t.id === id) || null;
+}
+
 // Analytics computed on demand from closed trades
 function getStats() {
     const closed = trades.filter(t => t.status !== 'OPEN');
     if (closed.length === 0) {
-        return { trades: 0, winRate: null, expectancy: null, profitFactor: null, netPoints: null };
+        return { trades: 0, winRate: null, expectancy: null, profitFactor: null, netPoints: null, netDollars: null };
     }
 
     const wins    = closed.filter(t => t.status === 'TP1' || t.status === 'TARGET');
@@ -62,25 +71,27 @@ function getStats() {
 
     const expectancy   = (totalWin - totalLoss) / closed.length;
     const profitFactor = totalLoss === 0 ? null : totalWin / totalLoss;
-    const netPoints    = closed.reduce((s, t) => s + (t.pnlPoints || 0), 0);
+    const netPoints    = closed.reduce((s, t) => s + (t.pnlPoints  || 0), 0);
+    const netDollars   = closed.reduce((s, t) => s + (t.pnlDollars || 0), 0);
 
-    // Net by calendar month  (YYYY-MM)
+    // Net by calendar month (YYYY-MM)
     const monthly = {};
     for (const t of closed) {
         const mo = t.exitTime ? t.exitTime.slice(0, 7) : t.timestamp.slice(0, 7);
-        monthly[mo] = (monthly[mo] || 0) + (t.pnlPoints || 0);
+        monthly[mo] = (monthly[mo] || 0) + (t.pnlDollars || 0);
     }
 
     return {
         trades:       closed.length,
         wins:         wins.length,
         losses:       losses.length,
-        winRate:      Math.round(winRate * 1000) / 10,   // percentage, 1 dp
+        winRate:      Math.round(winRate * 1000) / 10,
         expectancy:   Math.round(expectancy * 100) / 100,
         profitFactor: profitFactor !== null ? Math.round(profitFactor * 100) / 100 : null,
-        netPoints:    Math.round(netPoints * 100) / 100,
+        netPoints:    Math.round(netPoints  * 100) / 100,
+        netDollars:   Math.round(netDollars * 100) / 100,
         monthly,
     };
 }
 
-module.exports = { insert, update, getAll, getOpen, getStats };
+module.exports = { insert, update, getAll, getOpen, getById, getStats };

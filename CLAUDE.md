@@ -17,35 +17,111 @@ This repo is **execution only**. All strategy research, backtesting, and the Pin
 ```
 src/
   index.js      — Express server, port 3100, serves public/ SPA
-  webhook.js    — POST /webhook/signal — validates payload, records trade, places orders
-  projectx.js   — ProjectX auth (token file + JWT decode + 401 retry) + 3-order placement
-  db.js         — In-memory trade store + analytics engine (WR, expectancy, PF, net monthly)
-  dashboard.js  — REST API: GET /api/trades, GET /api/stats, PATCH /api/trades/:id
+  webhook.js    — POST /webhook/signal — validates, gates via risk.js, sizes, places orders
+  projectx.js   — ProjectX auth + order placement + cancel/flatten/fill retrieval
+  risk.js       — Dollar-denominated gate stack + session state (ported from EvilSignals)
+  contracts.js  — Tick-size / $/pt table, family normalization, tick rounding
+  settings.js   — User-configurable settings (contracts, caps, session)
+  db.js         — In-memory trade store + analytics (WR, expectancy, PF, net $)
+  dashboard.js  — REST API, per-family bias, broker-side flatten, trade-close hooks
+  log-stream.js — console → SSE ring buffer for the live log pane
 public/
-  index.html    — Black-background SPA: Analytics / Trades / Open tabs
+  index.html    — Black-background SPA: Executor + Performance tabs
 Project_Attachments/
-  Daily_Operational_Guide.txt  — John's daily ops reference
-  Setup_Guide.txt              — Trader onboarding (clone → .env → npm start → ngrok → TV alert)
+  Daily_Operational_Guide.txt
+  Setup_Guide.txt
+logs/
+  .token.json    — persisted ProjectX JWT
+  daily-pnl.json — persisted session risk state (P&L, streak, bias, counts)
 ```
 
 ---
 
 ## ProjectX Order Sequence
 
-Three separate orders per signal (no bracket API):
+Three or four orders per signal (no bracket API):
 
 1. **Market entry** (type 2) — full qty, side: 1=Buy (bullish), 0=Sell (bearish)
 2. **Stop SL** (type 4) — full qty at `stop` price, exit side
 3. **Limit TP1** (type 1) — qty-1 contracts at `tp1` (or full qty if qty=1), exit side
 4. **Limit Target** (type 1) — 1 contract runner at `target` (only when qty >= 2), exit side
 
-Custom tag pattern: `BEAST:ENTRY/SL/TP1/TARGET:{timestamp}`
+Custom tag pattern: `BEAST:{ENTRY|SL|TP1|TARGET|FLAT}:{timestamp}`
 
 Auth pattern ported from `EvilSignals-Executor/src/orders.js`:
-- Token persisted to `logs/.token.json` (survives restarts without re-login)
-- JWT `exp` decoded to detect expiry
-- 401 interceptor re-authenticates and retries once
+- Token persisted to `logs/.token.json`
+- JWT `exp` decoded; 401 interceptor re-authenticates and retries once
 - 3-attempt retry with 500ms backoff on all API calls
+
+---
+
+## Contract Specs
+
+All math lives in `src/contracts.js`. Product code is parsed from the ProjectX contract ID (`CON.F.US.<CODE>.<EXPIRY>`).
+
+| Code | Tick size | Tick value | $/pt  | Family |
+|------|-----------|-----------|-------|--------|
+| ENQ  | 0.25      | $5.00     | $20   | NQ     |
+| MNQ  | 0.25      | $0.50     | $2    | NQ     |
+| GC   | 0.10      | $10.00    | $100  | GC     |
+| MGC  | 0.10      | $1.00     | $10   | GC     |
+| ES   | 0.25      | $12.50    | $50   | ES     |
+| MES  | 0.25      | $1.25     | $5    | ES     |
+
+---
+
+## Enforced Risk Gates (src/risk.js)
+
+All caps are in **dollars**. Gate stack evaluated in order inside `risk.check()`:
+
+1. **Daily profit cap** — if `dailyPnl ≥ cap`, trading auto-disables; signals blocked.
+2. **Master trading toggle** — OFF blocks everything. Resets to OFF on every new trading day.
+3. **Daily loss cap** — if `dailyPnl ≤ -cap`, trading auto-disables.
+4. **Session close (hard stop)** — `sessionClose` (HH:MM ET) through 18:00 ET Globex reopen blocks all entries.
+5. **Per-family open position** — no hedging. One NQ *or* MNQ at a time; one GC *or* MGC; one ES *or* MES.
+6. **Direction bias** — per family (`NQ`/`GC`/`ES`): ALL / LONG / SHORT.
+7. **Per-trade loss cap** — when Dynamic Sizing is OFF: if SL-dollar risk with fixed qty > cap, block.
+
+### Dynamic Sizing
+
+Toggle in the settings panel. When ON:
+- `qty = floor(perTradeLossCap$ / (slPoints × $/pt))` per contract, clamped to product-specific fixed qty only if dynamic is OFF
+- `perTradeLossCap = 0` while Dynamic Sizing is ON blocks every signal
+- If computed qty < 1 (risk insufficient for one contract), the signal is blocked
+When OFF, fixed contract quantities per product code are used.
+
+### Consecutive Loss Circuit Breaker
+
+`recordTradeResult(status, pnlDollars)` runs on every trade close:
+- `STOPPED` with `pnl ≤ 0` → increments streak
+- `TP1` or `TARGET` → resets streak
+- `MANUAL` (including FLATTEN) → skipped; trader intervention does not count
+
+When `consecutiveLossLimit` is hit:
+- Trading toggles OFF
+- `circuitBreakerFiredAt = Date.now()`
+- A 30s interval auto-resumes trading after `pauseDuration` minutes (0 = rest of day)
+
+### Session / Trading-Day Rollover
+
+- Trading day: ≥18:00 ET rolls to the next calendar day
+- Saturday / Sunday → Friday
+- On rollover: P&L resets to $0, streak to 0, bias to ALL, `tradingEnabled = false`
+- State persisted to `logs/daily-pnl.json` (survives restart within the same session)
+
+---
+
+## Flatten (broker-side)
+
+`POST /api/flatten` does the full close cycle:
+
+1. For each open trade's `contractId`, call `px.flattenPosition(contractId)`
+2. Places an opposing market order for the full open size → captures `closeOrderId`
+3. Cancels all working orders for that contract
+4. Polls `/Order/searchHistorical` / `searchClosed` / `search` for the fill price
+5. Updates each affected DB row: status=MANUAL, exitPrice, pnlPoints, pnlDollars, rMultiple
+6. Flips dailyPnl by the realized $ amount
+7. Does NOT touch the consecutive-loss streak (MANUAL is a streak no-op)
 
 ---
 
@@ -69,88 +145,70 @@ Auth pattern ported from `EvilSignals-Executor/src/orders.js`:
 }
 ```
 
-**Required fields:** instrument, direction, action, setup, price, stop, tp1, target
-**Validated:** action must be "ENTRY", setup must be "BEAST", direction must be "bullish" or "bearish"
-**Optional metadata:** rDist, compression, entryHour, macroTransition, h4ZoneId
+**Required:** instrument, direction, action, setup, price, stop, tp1, target
+**Validated:** action must be "ENTRY", setup must be "BEAST", direction in {bullish, bearish}
 
 ---
 
-## Strategy Context (read-only reference — do not build strategy logic here)
+## Strategy Context (read-only — do not build strategy here)
 
 **BEAST Mode** = macro zone Inside bar breakout on 1-minute NQ.
 
-**Macro zones per hour:**
-- M1 Opening (:00–:09), Dead (:10–:19), M2 Killzone (:20–:39), Dead (:40–:49), M3 Closing (:50–:59)
+**Macro zones per hour:** M1 Opening (:00–:09), Dead (:10–:19), M2 Killzone (:20–:39), Dead (:40–:49), M3 Closing (:50–:59)
 
-**Inside detection:** At zone completion (:09/:39/:59), if currentHigh < prevHigh AND currentLow > prevLow → Inside zone. One-macro window rule: Inside expires when next zone completes.
+**Inside detection:** at zone completion (:09/:39/:59), if currentHigh < prevHigh AND currentLow > prevLow → Inside zone. Inside expires when the next zone completes.
 
-**Entry:** First 1m close above Inside High (bull) or below Inside Low (bear) in a non-dead zone.
+**Entry:** first 1m close above Inside High (bull) or below Inside Low (bear) in a non-dead zone.
 
-**Risk unit:** rDist = Inside zone range (insideHigh - insideLow)
-- SL = entry ± rDist
-- TP1 = entry ± 0.5 × rDist
-- Target = entry ± 1.0 × rDist
+**Risk unit:** `rDist` = Inside zone range (insideHigh − insideLow). SL = entry ± rDist. TP1 = entry ± 0.5×rDist. Target = entry ± 1.0×rDist.
 
-**Set F filters (backtested, confirmed OOS — 71.4% WR, +0.071 EV, 461 trades):**
-- Hour gate: 08, 11, 13, 14, 16 ET only
-- H4 zone exclusions: SH_D, TERM_D, FS_D (not yet implemented in Pine — h4ZoneId = "pending")
-- Min rDist: 20 pts
-- M3→M1 transitions allowed
-- Compression sweet spot: ≤40% (optional, not default)
+**Set F filters (OOS confirmed — 71.4% WR, +0.071 EV, 461 trades):** hours 08/11/13/14/16 ET; H4 exclusions SH_D/TERM_D/FS_D (pending in Pine v3); min rDist 20 pts; M3→M1 allowed; compression ≤40% (optional).
 
-**Pine Script indicator:** `EvilSignals-Executor/tradingview/Beast_Mode/BEAST_Mode_v1.pine`
-**Backtester engine:** `EvilSignals-Executor/backtester/lib/beast-mode-engine.js`
-**Backtester runner:** `EvilSignals-Executor/backtester/beast_mode_nq.js`
+**Pine Script:** `EvilSignals-Executor/tradingview/Beast_Mode/BEAST_Mode_v1.pine`
 
 ---
 
-## .env Keys
+## Dashboard (public/index.html)
 
-```
-PORT=3100
-WEBHOOK_SECRET=                    # optional — x-webhook-secret header check
-PROJECTX_API_URL=https://gateway-rtc.main.topstepx.com/api
-PROJECTX_USERNAME=
-PROJECTX_API_KEY=
-PROJECTX_ACCOUNT_ID=
-NQ_CONTRACT_ID=CON.F.US.ENQ.M26   # rolls quarterly (H=Mar, M=Jun, U=Sep, Z=Dec)
-GC_CONTRACT_ID=CON.F.US.MGC.Q25   # only if GC is enabled
-NQ_CONTRACTS=2                     # 1=TP1 only; 2+=TP1 + runner at target
-GC_CONTRACTS=1
-```
+Two tabs: **EXECUTOR** (active trade + live log + settings) and **PERFORMANCE** (stats, trade history, net-by-month in $). Black background, orange accent. Auto-refreshes every 5s (status) / 15s (health).
+
+**Header widgets:** ProjectX / RTC / Ngrok dots, ATM badge (Standard / Momentum), per-family bias buttons (NQ / GC / ES), TRADING ON/OFF toggle.
+
+**Active trade card:** shows entry/SL/TP1/target/qty, plus a red "TRADING DISABLED — <reason>" banner driven by `risk.getBlockReason()`.
+
+**Settings panel:** account, per-family contract IDs, per-product fixed quantities, Dynamic Sizing pill, Daily/Profit/Per-Trade caps ($), session close, consec-loss limit + pause, ATM strategy (momentum deferred).
 
 ---
 
-## Dashboard
+## RTC / Momentum Build Path (future)
 
-Black background, orange accent. Three tabs:
-- **Analytics:** Win Rate, Expectancy (R), Profit Factor, Net Points, Wins/Losses, Net by Month grid
-- **Trades:** Full history with manual outcome entry (dropdown: TP1/TARGET/STOPPED/MANUAL + exit price)
-- **Open:** Active positions only
+`atmStrategy = 'momentum'` is UI-visible but not yet wired. Build path when ready:
 
-Auto-refreshes every 30s. REST API at `/api/trades`, `/api/trades/open`, `/api/stats`.
-
-**Known limitation:** Trade store is in-memory — resets on server restart. Persistent storage (SQLite or flat file) is a future build item.
+1. Port `src/monitor.js` from `EvilSignals-Executor` (SignalR quote connection)
+2. Subscribe to NQ / GC / ES tick feed
+3. Implement momentum trail logic — same `activationPct` + `trailPct` pattern as EAI
+4. RTC dot goes green when the SignalR client is connected
 
 ---
 
-## Build Status and Next Steps
+## Build Status and Priority List
 
 **Done:**
 - [x] Express webhook server with payload validation
-- [x] ProjectX 3-order sequence (market + stop + limit)
+- [x] ProjectX 3-order sequence (market + stop + limit + runner)
 - [x] In-memory trade store with analytics
-- [x] Dashboard SPA (black-bg, 3 tabs)
-- [x] Auth pattern ported from production executor
-- [x] Setup Guide and Daily Operational Guide
+- [x] Dashboard SPA (2 tabs)
+- [x] Dollar-denominated gate stack (daily loss/profit, session close, streak, per-family positions, bias, dynamic sizing)
+- [x] Broker-side FLATTEN with real fill price retrieval
+- [x] Session-state persistence (`logs/daily-pnl.json`)
 
-**Next:**
-- [ ] **Live signal test** — fire paper signal through TV → ngrok → executor, verify 3 orders land
-- [ ] **Persistent trade store** — survive server restarts (SQLite or JSONL file)
-- [ ] **Automated outcome detection** — monitor ProjectX for SL/TP fills instead of manual entry
-- [ ] **H4 zone classification** — Pine v3 will populate h4ZoneId; executor will filter SH_D/TERM_D/FS_D
-- [ ] **ATM/trail features** — after basic execution validated; model on Anti-Martingale ATM from parent executor
-- [ ] **Contract roll helper** — script or dashboard button to update NQ_CONTRACT_ID on quarterly rolls
+**Priority list (in order):**
+1. **Live signal test** — TV → ngrok → executor → verify gates + orders + dashboard flow end-to-end
+2. **Persistent trade store** — SQLite or JSONL so trade history survives restart (separate from daily-pnl.json)
+3. **Automated outcome detection** — subscribe to ProjectX user hub / poll fills so STOPPED/TP1/TARGET update without manual entry
+4. **H4 zone classification** — Pine v3 populates `h4ZoneId`; executor filters SH_D/TERM_D/FS_D
+5. **RTC quote feed + momentum trail** — see build path above
+6. **Contract roll helper** — dashboard button to advance expiry codes
 
 ---
 
@@ -158,6 +216,7 @@ Auto-refreshes every 30s. REST API at `/api/trades`, `/api/trades/open`, `/api/s
 
 - Express 5 (path-to-regexp v8): catch-all routes use `/{*splat}` not `*`
 - ProjectX order types: 1=Limit, 2=Market, 4=Stop. Side: 0=Sell, 1=Buy
+- All risk caps are DOLLARS. Points/ticks only used inside order placement math.
 - Do not add EAI/IBOB/TMAG/ZTAR logic — this executor handles BEAST signals only
 - Do not add PM2 — traders run `npm start` directly
 - Keep the trader setup path simple: `git clone → npm install → .env → npm start`

@@ -1,29 +1,30 @@
 'use strict';
 
-const express    = require('express');
-const db         = require('./db');
-const settings   = require('./settings');
-const logStream  = require('./log-stream');
-const px         = require('./projectx');
+const express   = require('express');
+const db        = require('./db');
+const settings  = require('./settings');
+const risk      = require('./risk');
+const logStream = require('./log-stream');
+const px        = require('./projectx');
+const contracts = require('./contracts');
 
 function createDashboardRouter() {
     const router = express.Router();
 
     // ── Health (connection dots) ────────────────────────────────────────────
     router.get('/health', async (req, res) => {
-        const auth  = px.getAuthStatus();
-        // Ngrok: check if our own webhook is reachable via the public URL
+        const auth = px.getAuthStatus();
         let ngrokOk = false;
         const ngrokUrl = process.env.NGROK_URL || '';
         if (ngrokUrl) {
             try {
-                const ctrl = new AbortController();
+                const ctrl  = new AbortController();
                 const timer = setTimeout(() => ctrl.abort(), 3000);
                 const r = await fetch(`${ngrokUrl}/webhook/signal`, {
-                    method: 'POST',
+                    method:  'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: '{}',
-                    signal: ctrl.signal,
+                    body:    '{}',
+                    signal:  ctrl.signal,
                 });
                 clearTimeout(timer);
                 ngrokOk = r.ok;
@@ -38,22 +39,27 @@ function createDashboardRouter() {
 
     // ── Status ──────────────────────────────────────────────────────────────
     router.get('/status', (req, res) => {
-        const allTrades = db.getAll();
-        const open      = db.getOpen();
-        const today     = tradingDayStr();
+        const allTrades   = db.getAll();
+        const open        = db.getOpen();
+        const today       = tradingDayStr();
+        const openFamilies = new Set(open.map(t => t.family).filter(Boolean));
 
-        const todayTrades = allTrades.filter(t => (t.timestamp || '').slice(0, 10) === today);
-        const todayClosed = todayTrades.filter(t => t.status !== 'OPEN');
-        const dailyPnl    = todayClosed.reduce((s, t) => s + (t.pnlPoints || 0), 0);
+        const todayTrades  = allTrades.filter(t => (t.timestamp || '').slice(0, 10) === today);
+        const todayClosed  = todayTrades.filter(t => t.status !== 'OPEN');
         const signalsToday = todayTrades.length;
 
         res.json({
-            tradingEnabled: settings.get('tradingEnabled'),
-            nqBias:         settings.get('nqBias'),
+            tradingEnabled: risk.isTradingEnabled(),
+            dailyPnl:       Math.round(risk.getDailyPnl() * 100) / 100,   // dollars
+            blockReason:    risk.getBlockReason(openFamilies),
+            bias:           risk.getBias(),
             activeTrade:    open[0] || null,
+            openTrades:     open,
             lastTrade:      todayClosed.length ? todayClosed[todayClosed.length - 1] : null,
-            dailyPnl:       Math.round(dailyPnl * 100) / 100,
             signalsToday,
+            signalCounts:   risk.getSignalCounts(),
+            consecutiveLosses: risk.getConsecutiveLosses(),
+            circuitBreakerResumeAt: risk.getCircuitBreakerResumeAt(),
             settings:       settings.getAll(),
         });
     });
@@ -75,23 +81,22 @@ function createDashboardRouter() {
 
     // ── Trading toggle ──────────────────────────────────────────────────────
     router.post('/trading/toggle', (req, res) => {
-        const current = settings.get('tradingEnabled');
-        settings.set('tradingEnabled', !current);
-        const state = !current ? 'ON' : 'OFF';
-        console.log(`[settings] Trading toggled ${state}`);
-        res.json({ tradingEnabled: !current });
+        risk.setTradingEnabled(!risk.isTradingEnabled());
+        res.json({ tradingEnabled: risk.isTradingEnabled() });
     });
 
-    // ── Bias ────────────────────────────────────────────────────────────────
+    // ── Direction bias (per family) ─────────────────────────────────────────
     router.post('/bias', (req, res) => {
         const { instrument, bias } = req.body || {};
+        const family = contracts.normalizeInstrument(instrument || '');
+        if (!['NQ', 'GC', 'ES'].includes(family)) {
+            return res.status(400).json({ error: 'instrument must resolve to NQ, GC, or ES' });
+        }
         if (!['ALL', 'LONG', 'SHORT'].includes(bias)) {
             return res.status(400).json({ error: 'Invalid bias' });
         }
-        // For now only NQ bias is supported
-        settings.set('nqBias', bias);
-        console.log(`[settings] NQ bias set to ${bias}`);
-        res.json({ ok: true, nqBias: bias });
+        risk.setBias(family, bias);
+        res.json({ ok: true, family, bias });
     });
 
     // ── SSE log stream ──────────────────────────────────────────────────────
@@ -99,72 +104,110 @@ function createDashboardRouter() {
         logStream.addClient(res);
     });
 
-    // ── Flatten ─────────────────────────────────────────────────────────────
-    router.post('/flatten', (req, res) => {
-        console.warn('[flatten] Manual flatten requested — clearing open trades from DB');
-        const openTrades = db.getOpen();
-        for (const t of openTrades) {
-            db.update(t.id, {
-                status:    'MANUAL',
-                exitTime:  new Date().toISOString(),
-                pnlPoints: 0,
-                rMultiple: 0,
-            });
+    // ── Flatten — broker-side close + DB update with real fill price ────────
+    // Manual flatten: does NOT count toward the consecutive-loss streak.
+    router.post('/flatten', async (req, res) => {
+        console.warn('[flatten] Manual flatten requested');
+        const open = db.getOpen();
+        if (open.length === 0) return res.json({ ok: true, closed: 0 });
+
+        // Flatten each distinct contract present in open trades
+        const byContract = new Map();
+        for (const t of open) {
+            if (!t.contractId) continue;
+            if (!byContract.has(t.contractId)) byContract.set(t.contractId, []);
+            byContract.get(t.contractId).push(t);
         }
-        res.json({ ok: true, closed: openTrades.length });
+
+        let closed = 0;
+        for (const [contractId, tradesForContract] of byContract) {
+            try {
+                const result   = await px.flattenPosition(contractId);
+                const fillPx   = result.closeOrderId ? await px.waitForFillPrice(result.closeOrderId) : null;
+                const exitTime = new Date().toISOString();
+
+                for (const t of tradesForContract) {
+                    let pnlPoints = null, pnlDollars = null, rMultiple = null;
+                    if (fillPx != null && t.entryPrice != null) {
+                        const raw = fillPx - t.entryPrice;
+                        pnlPoints  = t.direction === 'bullish' ? raw : -raw;
+                        pnlPoints  = Math.round(pnlPoints * 100) / 100;
+                        pnlDollars = Math.round(contracts.pointsToDollars(pnlPoints, t.contractId) * (t.qty || 1) * 100) / 100;
+                        if (t.rDist > 0) rMultiple = Math.round((pnlPoints / t.rDist) * 100) / 100;
+                        risk.addPnl(pnlDollars);
+                    }
+                    db.update(t.id, {
+                        status:     'MANUAL',
+                        exitPrice:  fillPx,
+                        exitTime,
+                        pnlPoints,
+                        pnlDollars,
+                        rMultiple,
+                    });
+                    // MANUAL does not touch the streak
+                    closed++;
+                }
+                logStream.addLine(`[FLATTEN] ${contractId} close=${fillPx ?? 'unknown'} (${tradesForContract.length} trade${tradesForContract.length === 1 ? '' : 's'})`);
+            } catch (e) {
+                console.error(`[flatten] ${contractId} failed: ${e.message}`);
+            }
+        }
+
+        res.json({ ok: true, closed });
     });
 
     // ── Trades ──────────────────────────────────────────────────────────────
-    router.get('/trades', (req, res) => {
-        res.json(db.getAll());
-    });
-
-    router.get('/trades/open', (req, res) => {
-        res.json(db.getOpen());
-    });
+    router.get('/trades',      (req, res) => res.json(db.getAll()));
+    router.get('/trades/open', (req, res) => res.json(db.getOpen()));
 
     // ── Stats ───────────────────────────────────────────────────────────────
-    router.get('/stats', (req, res) => {
-        res.json(db.getStats());
-    });
+    router.get('/stats', (req, res) => res.json(db.getStats()));
 
     // ── Manual outcome update ───────────────────────────────────────────────
+    // When the outcome is TP1 / TARGET / STOPPED the streak and P&L move with
+    // the update; MANUAL still records but is a streak no-op.
     router.patch('/trades/:id', (req, res) => {
         const id    = parseInt(req.params.id, 10);
-        const trade = db.getAll().find(t => t.id === id);
+        const trade = db.getById(id);
         if (!trade) return res.status(404).json({ error: 'Trade not found' });
 
-        const { status, exitPrice, exitTime } = req.body;
+        const { status, exitPrice, exitTime } = req.body || {};
         if (!['TP1', 'TARGET', 'STOPPED', 'MANUAL'].includes(status)) {
             return res.status(400).json({ error: 'Invalid status' });
         }
 
         const now  = exitTime || new Date().toISOString();
-        const exit = exitPrice != null ? parseFloat(exitPrice) : null;
+        const exit = exitPrice != null && exitPrice !== '' ? parseFloat(exitPrice) : null;
 
-        let rMultiple = null;
-        let pnlPoints = null;
-        if (exit !== null && trade.rDist > 0) {
+        let rMultiple = null, pnlPoints = null, pnlDollars = null;
+        if (exit !== null && trade.entryPrice != null) {
             const raw = exit - trade.entryPrice;
             pnlPoints  = trade.direction === 'bullish' ? raw : -raw;
-            rMultiple  = Math.round((pnlPoints / trade.rDist) * 100) / 100;
             pnlPoints  = Math.round(pnlPoints * 100) / 100;
+            pnlDollars = Math.round(contracts.pointsToDollars(pnlPoints, trade.contractId) * (trade.qty || 1) * 100) / 100;
+            if (trade.rDist > 0) rMultiple = Math.round((pnlPoints / trade.rDist) * 100) / 100;
         }
 
-        const updated = db.update(id, { status, exitPrice: exit, exitTime: now, rMultiple, pnlPoints });
+        const updated = db.update(id, { status, exitPrice: exit, exitTime: now, rMultiple, pnlPoints, pnlDollars });
+
+        // Wire into risk: add P&L (dollars) + update consec-loss streak
+        if (pnlDollars != null) risk.addPnl(pnlDollars);
+        risk.recordTradeResult(status, pnlDollars || 0);
+
         res.json(updated);
     });
 
     return router;
 }
 
-// Trading day string: 18:00+ ET = next calendar day
+// Trading day string: ≥18:00 ET = next calendar day (matches risk.js)
 function tradingDayStr() {
     const now = new Date();
-    const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
-    const etHour = parseInt(etStr, 10);
-    const ref = etHour >= 18 ? new Date(now.getTime() + 24 * 60 * 60 * 1000) : now;
-    return ref.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const etHour = Number(new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York', hour: 'numeric', hour12: false,
+    }).format(now));
+    const ref = new Date(etHour >= 18 ? now.getTime() + 24 * 60 * 60 * 1000 : now.getTime());
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(ref);
 }
 
 module.exports = { createDashboardRouter };

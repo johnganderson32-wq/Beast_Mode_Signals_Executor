@@ -1,16 +1,18 @@
 'use strict';
 
-// ProjectX API client — modelled after EvilSignals-Executor/src/orders.js
+// ProjectX API client.
 // Order types: 1=Limit  2=Market  4=Stop
 // Side:        0=Sell   1=Buy
 
-const axios = require('axios');
-const fs    = require('fs');
-const path  = require('path');
+const axios     = require('axios');
+const fs        = require('fs');
+const path      = require('path');
+const settings  = require('./settings');
+const contracts = require('./contracts');
 
 const BASE         = (process.env.PROJECTX_API_URL || 'https://gateway-rtc.main.topstepx.com/api').replace(/\/$/, '');
 const TOKEN_FILE   = path.join(__dirname, '..', 'logs', '.token.json');
-const TOKEN_MAX_MS = 12 * 60 * 60 * 1000; // 12 h — actual JWT exp decoded below
+const TOKEN_MAX_MS = 12 * 60 * 60 * 1000;
 
 let token        = null;
 let tokenSavedAt = 0;
@@ -43,7 +45,7 @@ http.interceptors.response.use(
 );
 
 // ---------------------------------------------------------------------------
-// TOKEN PERSISTENCE — avoids re-login on restart
+// TOKEN PERSISTENCE
 // ---------------------------------------------------------------------------
 function saveToken(tok) {
     try {
@@ -106,6 +108,10 @@ async function ensureAuth() {
 // ---------------------------------------------------------------------------
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// Retry on transport / 5xx only. A business error (HTTP 200 with
+// success=false, e.g. "custom tag already in use") means the broker already
+// saw the request — retrying would double-book or get rejected for duplicate
+// tag. Fail fast on those.
 async function post(urlPath, body, tag) {
     const MAX = 3;
     let lastErr;
@@ -113,13 +119,16 @@ async function post(urlPath, body, tag) {
         try {
             const { data } = await http.post(urlPath, body);
             if (data?.success === false) {
-                throw new Error(data.errorMessage || 'API success=false');
+                const err = new Error(data.errorMessage || 'API success=false');
+                err.noRetry = true;
+                throw err;
             }
             return data;
         } catch (e) {
             lastErr = e;
             const msg = e?.response?.data?.errorMessage || e.message;
             console.warn(`[projectx] ${tag} attempt ${i + 1}/${MAX}: ${msg}`);
+            if (e.noRetry) break;
             if (i < MAX - 1) await sleep(500 * (i + 1));
         }
     }
@@ -127,117 +136,208 @@ async function post(urlPath, body, tag) {
 }
 
 // ---------------------------------------------------------------------------
-// CONTRACT HELPERS
-// Normalize any TV ticker variant to the product family key used in .env:
-//   NQ1!, MNQ1!, ENQ1!, MNQM2026, NQ  →  "NQ"
-//   GC1!, MGC1!, MGCM2026, GC         →  "GC"
+// CONTRACT / QTY HELPERS
 // ---------------------------------------------------------------------------
-const PRODUCT_MAP = {
-    NQ: 'NQ', MNQ: 'NQ', ENQ: 'NQ',
-    GC: 'GC', MGC: 'GC',
-};
+// Map product family → contract ID key in settings (mini default; micro
+// overrides when configured). The user keeps ONE active contract ID per
+// family; dashboard picks between mini/micro via the select.
+const FAMILY_CONTRACT_KEY = { NQ: 'nqContractId', GC: 'gcContractId', ES: 'esContractId' };
 
-function normalizeInstrument(raw) {
-    const upper = raw.toUpperCase().trim();
-    // Try direct map first (handles "NQ", "MNQ", "GC", "MGC" exactly)
-    if (PRODUCT_MAP[upper]) return PRODUCT_MAP[upper];
-    // Strip trailing "1!", "2!" (TV continuous contract suffix)
-    let clean = upper.replace(/\d+!$/, '');
-    if (PRODUCT_MAP[clean]) return PRODUCT_MAP[clean];
-    // Strip TradingView expiry suffix (e.g. MNQM2026 → MNQ)
-    clean = upper.replace(/[FGHJKMNQUVXZ]\d{4}$/, '');
-    if (PRODUCT_MAP[clean]) return PRODUCT_MAP[clean];
-    return clean;
-}
-
-function getContractId(instrument) {
-    const family = normalizeInstrument(instrument);
-    const key = `${family}_CONTRACT_ID`;
-    const id  = process.env[key];
-    if (!id) throw new Error(`No contract ID configured for ${instrument} → ${family} (set ${key} in .env)`);
+function getContractIdForFamily(family) {
+    const key = FAMILY_CONTRACT_KEY[family];
+    if (!key) throw new Error(`No contract key for family ${family}`);
+    const id = settings.get(key) || process.env[`${family}_CONTRACT_ID`];
+    if (!id) throw new Error(`No contract ID configured for family ${family}`);
     return id;
 }
 
-function getQty(instrument) {
-    const family = normalizeInstrument(instrument);
-    const key = `${family}_CONTRACTS`;
-    return parseInt(process.env[key] || '1', 10);
+// Fixed qty — pulled by product code (MNQ vs ENQ, MGC vs GC, MES vs ES).
+function getFixedQty(contractId) {
+    const code = contracts.productCodeFromContractId(contractId) || '';
+    const key  = `${code.toLowerCase()}Contracts`;
+    const n    = parseInt(settings.get(key), 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 // ---------------------------------------------------------------------------
 // ORDER PLACEMENT
-// Entry = market; SL = stop order; TP1 + Target = limit orders
-//
-// With 1 contract: only TP1 limit is placed (target omitted)
-// With 2+ contracts: qty-1 at TP1, 1 at target
 // ---------------------------------------------------------------------------
-async function placeOrder({ instrument, direction, stop, tp1, target }) {
+// Returns { orderIds: { entry, sl, tp1, target }, qty, contractId }
+async function placeOrder({ family, direction, stop, tp1, target, qty }) {
     await ensureAuth();
 
-    const accountId = parseInt(process.env.PROJECTX_ACCOUNT_ID, 10);
-    if (!accountId) throw new Error('PROJECTX_ACCOUNT_ID not set in .env');
+    const accountId = parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    if (!accountId) throw new Error('PROJECTX_ACCOUNT_ID not set');
 
-    const contractId = getContractId(instrument);
-    const qty        = getQty(instrument);
+    const contractId = getContractIdForFamily(family);
     const entrySide  = direction === 'bullish' ? 1 : 0;
     const exitSide   = direction === 'bullish' ? 0 : 1;
     const ts         = Date.now();
 
+    // Round protective prices to the contract's tick size
+    const slPrice    = contracts.roundToTick(stop,   contractId);
+    const tp1Price   = contracts.roundToTick(tp1,    contractId);
+    const tgtPrice   = contracts.roundToTick(target, contractId);
+
+    const orderIds = {};
+
     // 1. Market entry
-    const entryResult = await post('/Order/place', {
-        accountId,
-        contractId,
-        type:      2,          // Market
+    const entryRes = await post('/Order/place', {
+        accountId, contractId,
+        type:      2,
         side:      entrySide,
         size:      qty,
         customTag: `BEAST:ENTRY:${ts}`,
     }, 'ENTRY');
-    console.log(`[projectx] Entry: ${direction} ${qty}x ${instrument}`, entryResult);
+    orderIds.entry = entryRes?.orderId ?? entryRes?.id ?? null;
+    console.log(`[projectx] Entry: ${direction} ${qty}x ${contractId} (id=${orderIds.entry})`);
 
     // 2. Stop loss
-    await post('/Order/place', {
-        accountId,
-        contractId,
-        type:      4,          // Stop
-        side:      exitSide,
-        size:      qty,
-        stopPrice: stop,
-        customTag: `BEAST:SL:${ts}`,
+    const slRes = await post('/Order/place', {
+        accountId, contractId,
+        type:       4,
+        side:       exitSide,
+        size:       qty,
+        stopPrice:  slPrice,
+        customTag:  `BEAST:SL:${ts}`,
     }, 'SL');
-    console.log(`[projectx] SL placed @ ${stop}`);
+    orderIds.sl = slRes?.orderId ?? slRes?.id ?? null;
+    console.log(`[projectx] SL @ ${slPrice} (id=${orderIds.sl})`);
 
-    // 3. TP1 limit (all contracts if qty=1, qty-1 if qty>1)
+    // 3. TP1 (all contracts if qty=1, qty-1 otherwise)
     const tp1Qty = qty === 1 ? 1 : qty - 1;
-    await post('/Order/place', {
-        accountId,
-        contractId,
-        type:       1,         // Limit
+    const tp1Res = await post('/Order/place', {
+        accountId, contractId,
+        type:       1,
         side:       exitSide,
         size:       tp1Qty,
-        limitPrice: tp1,
+        limitPrice: tp1Price,
         customTag:  `BEAST:TP1:${ts}`,
     }, 'TP1');
-    console.log(`[projectx] TP1 placed @ ${tp1} (${tp1Qty} ct)`);
+    orderIds.tp1 = tp1Res?.orderId ?? tp1Res?.id ?? null;
+    console.log(`[projectx] TP1 @ ${tp1Price} (${tp1Qty}ct, id=${orderIds.tp1})`);
 
-    // 4. Target limit (runner — only when qty >= 2)
+    // 4. Runner target — only when qty ≥ 2
     if (qty >= 2) {
-        await post('/Order/place', {
-            accountId,
-            contractId,
-            type:       1,     // Limit
+        const tgtRes = await post('/Order/place', {
+            accountId, contractId,
+            type:       1,
             side:       exitSide,
             size:       1,
-            limitPrice: target,
+            limitPrice: tgtPrice,
             customTag:  `BEAST:TARGET:${ts}`,
         }, 'TARGET');
-        console.log(`[projectx] Target placed @ ${target} (1 ct)`);
+        orderIds.target = tgtRes?.orderId ?? tgtRes?.id ?? null;
+        console.log(`[projectx] Target @ ${tgtPrice} (1ct, id=${orderIds.target})`);
     }
 
-    return { entryResult, stop, tp1, target, qty };
+    return { orderIds, qty, contractId };
 }
 
 // ---------------------------------------------------------------------------
-// EXPORTS
+// POSITIONS & ORDERS
+// ---------------------------------------------------------------------------
+async function getOpenPositions(acctId) {
+    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    const data = await post('/Position/searchOpen', { accountId }, 'POS');
+    return data?.positions || [];
+}
+
+async function getOpenOrders(acctId) {
+    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    const data = await post('/Order/searchOpen', { accountId }, 'ORD');
+    return data?.orders || [];
+}
+
+async function cancelOrder(orderId, acctId) {
+    if (orderId == null) return;
+    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    try {
+        const { data } = await http.post('/Order/cancel', { accountId, orderId });
+        if (data?.success === false && data.errorCode !== 5) {
+            console.warn(`[projectx] Cancel ${orderId}: errorCode=${data.errorCode}`);
+        }
+    } catch (e) {
+        console.warn(`[projectx] Cancel ${orderId} failed: ${e.message}`);
+    }
+}
+
+async function cancelAllOrdersFor(contractId, acctId) {
+    const openOrders = await getOpenOrders(acctId);
+    const rel = openOrders.filter(o => o.contractId === contractId);
+    for (const o of rel) {
+        await cancelOrder(o.orderId ?? o.id, acctId);
+    }
+    if (rel.length) console.log(`[projectx] Cancelled ${rel.length} working orders for ${contractId}`);
+}
+
+// Look up a filled order's fill price. Tries historical / closed / search endpoints.
+async function getFilledOrder(orderId, acctId) {
+    if (orderId == null) return null;
+    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    const id        = Number(orderId);
+    const endpoints = [
+        ['/Order/searchHistorical', { accountId, orderId: id }],
+        ['/Order/searchClosed',     { accountId, orderId: id }],
+        ['/Order/search',           { accountId, orderId: id, status: 2 }],
+    ];
+    for (const [p, body] of endpoints) {
+        try {
+            const { data } = await http.post(p, body);
+            const orders = data?.orders || data?.results || [];
+            const found  = orders.find(o => (o.orderId ?? o.id) === id) || orders[0];
+            if (found && (found.fillPrice ?? found.filledPrice ?? found.avgFillPrice) != null) {
+                return found;
+            }
+        } catch {}
+    }
+    return null;
+}
+
+// Market-close the position for contractId (if any), then cancel working orders.
+// Returns { closed: boolean, closeOrderId: number|null, contractId }
+async function flattenPosition(contractId, acctId) {
+    await ensureAuth();
+    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+
+    let closeOrderId = null;
+    try {
+        const positions = await getOpenPositions(accountId);
+        const pos = positions.find(p => p.contractId === contractId);
+        if (pos && (pos.size > 0)) {
+            const exitSide = pos.type === 1 ? 1 : 0;   // 1 = buy-to-close (short pos), 0 = sell-to-close (long pos)
+            const res = await post('/Order/place', {
+                accountId,
+                contractId,
+                type:      2,
+                side:      exitSide,
+                size:      pos.size,
+                customTag: `BEAST:FLAT:${Date.now()}`,
+            }, 'FLATTEN');
+            closeOrderId = res?.orderId ?? res?.id ?? null;
+            console.log(`[projectx] Flattened ${contractId} (${pos.size}ct, closeId=${closeOrderId})`);
+        }
+    } catch (e) {
+        console.error(`[projectx] flattenPosition(${contractId}): ${e.message}`);
+    }
+
+    await cancelAllOrdersFor(contractId, accountId);
+    return { closed: closeOrderId != null, closeOrderId, contractId };
+}
+
+// Poll for the closing fill price. Returns the fill price (number) or null.
+async function waitForFillPrice(orderId, acctId, { maxAttempts = 10, intervalMs = 400 } = {}) {
+    for (let i = 0; i < maxAttempts; i++) {
+        const filled = await getFilledOrder(orderId, acctId);
+        const price  = filled?.fillPrice ?? filled?.filledPrice ?? filled?.avgFillPrice ?? null;
+        if (price != null) return Number(price);
+        await sleep(intervalMs);
+    }
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// STATUS
 // ---------------------------------------------------------------------------
 function getAuthStatus() {
     if (!token) return { connected: false, reason: 'no token' };
@@ -246,4 +346,10 @@ function getAuthStatus() {
     return { connected: true, expiresAt: exp ? new Date(exp).toISOString() : null };
 }
 
-module.exports = { authenticate, ensureAuth, placeOrder, getAuthStatus };
+module.exports = {
+    authenticate, ensureAuth, placeOrder, getAuthStatus,
+    getOpenPositions, getOpenOrders,
+    cancelOrder, cancelAllOrdersFor,
+    flattenPosition, getFilledOrder, waitForFillPrice,
+    getContractIdForFamily, getFixedQty,
+};
