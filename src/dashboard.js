@@ -7,6 +7,11 @@ const risk      = require('./risk');
 const logStream = require('./log-stream');
 const px        = require('./projectx');
 const contracts = require('./contracts');
+const { fetchAccounts } = require('../scripts/fetchAccounts');
+
+const ACCOUNTS_TTL_MS = 60 * 1000;
+let accountsCache = null;
+let accountsCacheAt = 0;
 
 function createDashboardRouter() {
     const router = express.Router();
@@ -67,6 +72,32 @@ function createDashboardRouter() {
     // ── Settings ────────────────────────────────────────────────────────────
     router.get('/settings', (req, res) => {
         res.json(settings.getAll());
+    });
+
+    // ── Accounts (for account selector dropdown) ───────────────────────────
+    router.get('/accounts', async (req, res) => {
+        try {
+            const now = Date.now();
+            if (!accountsCache || now - accountsCacheAt > ACCOUNTS_TTL_MS) {
+                const fresh = await fetchAccounts({ onlyActiveAccounts: true });
+                accountsCache = fresh.map(a => ({
+                    id:       a.id,
+                    label:    a.label,
+                    canTrade: !!a.canTrade,
+                    balance:  a.balance,
+                }));
+                accountsCacheAt = now;
+            }
+            const storedId = settings.get('accountId') || '';
+            const storedInList = !storedId || accountsCache.some(a => String(a.id) === String(storedId));
+            if (storedId && !storedInList) {
+                console.warn(`[accounts] stored accountId=${storedId} not in current account list`);
+            }
+            res.json({ accounts: accountsCache, storedId, storedInList });
+        } catch (e) {
+            console.error(`[accounts] fetch failed: ${e.message}`);
+            res.status(502).json({ error: e.message });
+        }
     });
 
     router.post('/settings', (req, res) => {

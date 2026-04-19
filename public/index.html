@@ -481,7 +481,10 @@
       <form class="settings-form" onsubmit="saveSettings(event)">
         <div class="field-group">
           <label style="color:var(--accent)">Beast Mode Account</label>
-          <input type="text" id="s-account" placeholder="Account ID">
+          <select id="s-account"><option value="">Loading...</option></select>
+          <div id="s-account-error" style="display:none;color:#f66;font-size:11px;margin-top:4px;">
+            Failed to load — <a href="#" onclick="loadAccounts();return false;" style="color:var(--accent)">Retry</a>
+          </div>
         </div>
         <div class="field-group">
           <label>Active NQ Contract</label>
@@ -897,6 +900,39 @@
     btn.className   = 'toggle-pill ' + (dynamicOn ? 'on' : 'off');
   }
   function toggleDynamicSizing() { setDynamicPill(!dynamicOn); }
+
+  function loadAccounts() {
+    var sel = document.getElementById('s-account');
+    var err = document.getElementById('s-account-error');
+    err.style.display = 'none';
+    sel.innerHTML = '<option value="">Loading...</option>';
+    fetch('/api/accounts').then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function(data) {
+      sel.innerHTML = '';
+      if (data.storedId && !data.storedInList) {
+        var stale = document.createElement('option');
+        stale.value = data.storedId;
+        stale.textContent = 'stored: ' + data.storedId + ' (not in current list)';
+        stale.disabled = true;
+        stale.selected = true;
+        sel.appendChild(stale);
+      }
+      (data.accounts || []).forEach(function(a) {
+        var opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.canTrade ? a.label : a.label + ' (no trade permission)';
+        if (!a.canTrade) opt.disabled = true;
+        sel.appendChild(opt);
+      });
+      if (data.storedInList && data.storedId) sel.value = data.storedId;
+    }).catch(function() {
+      sel.innerHTML = '<option value="">—</option>';
+      err.style.display = 'block';
+    });
+  }
+  loadAccounts();
 
   function loadSettings() {
     fetch('/api/settings').then(function(r) { return r.json(); }).then(function(s) {
