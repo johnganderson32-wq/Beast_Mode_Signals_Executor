@@ -13,6 +13,12 @@ const logStream = require('./log-stream');
 // Required fields from the BEAST Mode Pine payload
 const REQUIRED = ['instrument', 'direction', 'action', 'setup', 'price', 'stop', 'tp1', 'target'];
 
+// Max age between Pine bar close and webhook receipt. Past this, the entry
+// edge is gone — reject rather than fill stale. Pine v3+ attaches barCloseMs
+// (UTC epoch, same scale as Date.now). Payloads without the field are legacy
+// and pass through with a warning so we don't hard-fail during rollout.
+const STALE_SIGNAL_MS = 5000;
+
 // Append-only audit log of every validated webhook signal and how we handled
 // it. Skips auth failures and empty-body pings (those aren't real signals).
 const SIGNALS_FILE = path.join(__dirname, '..', 'logs', 'signals.jsonl');
@@ -97,6 +103,22 @@ function createWebhookRouter() {
             return res.status(400).json({ error: err });
         }
 
+        // ── Staleness gate ──────────────────────────────────────────────────
+        // Reject anything older than STALE_SIGNAL_MS after bar close. TV alert
+        // dispatcher queue lag spikes at NQ cash open; at 10s the NQ entry is
+        // already blown. Missing barCloseMs = legacy payload, warn + proceed.
+        let ageMs = null;
+        if (payload.barCloseMs != null) {
+            ageMs = Date.now() - Number(payload.barCloseMs);
+            if (Number.isFinite(ageMs) && ageMs > STALE_SIGNAL_MS) {
+                console.warn(`[webhook] REJECTED STALE — ${payload.instrument} ${payload.direction} ageMs=${ageMs} > ${STALE_SIGNAL_MS}`);
+                logSignal(payload, 'rejected_stale', { ageMs, budgetMs: STALE_SIGNAL_MS });
+                return res.status(200).json({ status: 'rejected_stale', ageMs, budgetMs: STALE_SIGNAL_MS });
+            }
+        } else {
+            console.warn('[webhook] payload missing barCloseMs — legacy alert, staleness check skipped');
+        }
+
         const {
             instrument, direction, price: entryPrice,
             stop, tp1, target, rDist, compression,
@@ -104,7 +126,8 @@ function createWebhookRouter() {
         } = payload;
 
         const family = contracts.normalizeInstrument(instrument);
-        console.log(`[webhook] BEAST ${direction.toUpperCase()} ${instrument} (${family}) entry=${entryPrice} SL=${stop} TP1=${tp1} T=${target}`);
+        const ageTag = ageMs != null ? ` age=${ageMs}ms` : '';
+        console.log(`[webhook] BEAST ${direction.toUpperCase()} ${instrument} (${family}) entry=${entryPrice} SL=${stop} TP1=${tp1} T=${target}${ageTag}`);
 
         // Identify which families currently have OPEN trades (no-hedge gate)
         const openFamilies = new Set(db.getOpen().map(t => t.family).filter(Boolean));
@@ -204,8 +227,9 @@ function createWebhookRouter() {
         logSignal(payload, orderError ? 'order_failed' : 'accepted', {
             tradeId: trade.id,
             qty,
-            ...(orderError   ? { error: orderError, stage: orderStage } : {}),
-            ...(safetyFlatten ? { safetyFlatten } : {}),
+            ...(ageMs != null ? { ageMs } : {}),
+            ...(orderError     ? { error: orderError, stage: orderStage } : {}),
+            ...(safetyFlatten  ? { safetyFlatten } : {}),
         });
 
         return res.status(200).json({

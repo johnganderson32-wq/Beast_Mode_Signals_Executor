@@ -144,12 +144,14 @@ When `consecutiveLossLimit` is hit:
   "compression":     38.5,
   "entryHour":       11,
   "macroTransition": "M2_to_M3",
-  "h4ZoneId":        "pending"
+  "h4ZoneId":        "pending",
+  "barCloseMs":      1745148600000
 }
 ```
 
 **Required:** instrument, direction, action, setup, price, stop, tp1, target
 **Validated:** action must be "ENTRY", setup must be "BEAST", direction in {bullish, bearish}
+**Staleness:** `barCloseMs` (UTC epoch of the confirmed bar close) is checked against `Date.now()`. Signals older than `STALE_SIGNAL_MS` (5000ms) are rejected with `disposition: "rejected_stale"`. Missing field = legacy payload, warn and proceed.
 
 ---
 
