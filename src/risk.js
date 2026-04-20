@@ -11,8 +11,8 @@
 const fs        = require('fs');
 const path      = require('path');
 const settings  = require('./settings');
+const { LOG_DIR } = require('./paths');
 
-const LOG_DIR   = path.join(__dirname, '..', 'logs');
 const PNL_FILE  = path.join(LOG_DIR, 'daily-pnl.json');
 
 // Globex reopen is fixed at 18:00 ET — end of the closed window.

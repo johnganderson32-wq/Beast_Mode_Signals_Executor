@@ -9,6 +9,7 @@ const risk      = require('./risk');
 const settings  = require('./settings');
 const contracts = require('./contracts');
 const logStream = require('./log-stream');
+const { LOG_DIR } = require('./paths');
 
 // Required fields from the BEAST Mode Pine payload
 const REQUIRED = ['instrument', 'direction', 'action', 'setup', 'price', 'stop', 'tp1', 'target'];
@@ -21,7 +22,7 @@ const STALE_SIGNAL_MS = 5000;
 
 // Append-only audit log of every validated webhook signal and how we handled
 // it. Skips auth failures and empty-body pings (those aren't real signals).
-const SIGNALS_FILE = path.join(__dirname, '..', 'logs', 'signals.jsonl');
+const SIGNALS_FILE = path.join(LOG_DIR, 'signals.jsonl');
 
 function logSignal(payload, disposition, extra = {}) {
     try {

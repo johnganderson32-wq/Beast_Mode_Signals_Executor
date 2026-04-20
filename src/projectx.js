@@ -10,9 +10,10 @@ const fs        = require('fs');
 const path      = require('path');
 const settings  = require('./settings');
 const contracts = require('./contracts');
+const { LOG_DIR } = require('./paths');
 
 const BASE         = (process.env.PROJECTX_API_URL || 'https://gateway-rtc.main.topstepx.com/api').replace(/\/$/, '');
-const TOKEN_FILE   = path.join(__dirname, '..', 'logs', '.token.json');
+const TOKEN_FILE   = path.join(LOG_DIR, '.token.json');
 const TOKEN_MAX_MS = 12 * 60 * 60 * 1000;
 
 let token        = null;
@@ -50,7 +51,7 @@ http.interceptors.response.use(
 // ---------------------------------------------------------------------------
 function saveToken(tok) {
     try {
-        fs.mkdirSync(path.join(__dirname, '..', 'logs'), { recursive: true });
+        fs.mkdirSync(LOG_DIR, { recursive: true });
         fs.writeFileSync(TOKEN_FILE, JSON.stringify({ token: tok, savedAt: Date.now() }));
     } catch {}
 }

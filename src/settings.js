@@ -14,9 +14,9 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { LOG_DIR } = require('./paths');
 
 const SCHEMA_VERSION = 1;
-const LOG_DIR        = path.join(__dirname, '..', 'logs');
 const SETTINGS_FILE  = path.join(LOG_DIR, 'settings.json');
 
 const store = {
