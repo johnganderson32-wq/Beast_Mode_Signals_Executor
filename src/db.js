@@ -98,7 +98,8 @@ function insert(trade) {
         exitTime:        null,
         rMultiple:       null,
         pnlPoints:       null,
-        pnlDollars:      null,
+        pnlDollars:      null,        // NET: gross - commission (matches broker-account impact)
+        commission:      null,        // round-turn, qty-inclusive
         orderIds:        trade.orderIds || {}, // { entry, sl, tp1, target }
     };
     trades.push(record);

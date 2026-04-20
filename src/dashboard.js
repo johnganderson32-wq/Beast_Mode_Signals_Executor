@@ -158,12 +158,14 @@ function createDashboardRouter() {
                 const exitTime = new Date().toISOString();
 
                 for (const t of tradesForContract) {
-                    let pnlPoints = null, pnlDollars = null, rMultiple = null;
+                    let pnlPoints = null, pnlDollars = null, commission = null, rMultiple = null;
                     if (fillPx != null && t.entryPrice != null) {
                         const raw = fillPx - t.entryPrice;
                         pnlPoints  = t.direction === 'bullish' ? raw : -raw;
                         pnlPoints  = Math.round(pnlPoints * 100) / 100;
-                        pnlDollars = Math.round(contracts.pointsToDollars(pnlPoints, t.contractId) * (t.qty || 1) * 100) / 100;
+                        const gross = contracts.pointsToDollars(pnlPoints, t.contractId) * (t.qty || 1);
+                        commission  = Math.round(contracts.getCommissionPerContract(t.contractId) * (t.qty || 1) * 100) / 100;
+                        pnlDollars  = Math.round((gross - commission) * 100) / 100;
                         if (t.rDist > 0) rMultiple = Math.round((pnlPoints / t.rDist) * 100) / 100;
                         risk.addPnl(pnlDollars);
                     }
@@ -173,6 +175,7 @@ function createDashboardRouter() {
                         exitTime,
                         pnlPoints,
                         pnlDollars,
+                        commission,
                         rMultiple,
                     });
                     // MANUAL does not touch the streak
@@ -210,16 +213,18 @@ function createDashboardRouter() {
         const now  = exitTime || new Date().toISOString();
         const exit = exitPrice != null && exitPrice !== '' ? parseFloat(exitPrice) : null;
 
-        let rMultiple = null, pnlPoints = null, pnlDollars = null;
+        let rMultiple = null, pnlPoints = null, pnlDollars = null, commission = null;
         if (exit !== null && trade.entryPrice != null) {
             const raw = exit - trade.entryPrice;
             pnlPoints  = trade.direction === 'bullish' ? raw : -raw;
             pnlPoints  = Math.round(pnlPoints * 100) / 100;
-            pnlDollars = Math.round(contracts.pointsToDollars(pnlPoints, trade.contractId) * (trade.qty || 1) * 100) / 100;
+            const gross = contracts.pointsToDollars(pnlPoints, trade.contractId) * (trade.qty || 1);
+            commission  = Math.round(contracts.getCommissionPerContract(trade.contractId) * (trade.qty || 1) * 100) / 100;
+            pnlDollars  = Math.round((gross - commission) * 100) / 100;
             if (trade.rDist > 0) rMultiple = Math.round((pnlPoints / trade.rDist) * 100) / 100;
         }
 
-        const updated = db.update(id, { status, exitPrice: exit, exitTime: now, rMultiple, pnlPoints, pnlDollars });
+        const updated = db.update(id, { status, exitPrice: exit, exitTime: now, rMultiple, pnlPoints, pnlDollars, commission });
 
         // Wire into risk: add P&L (dollars) + update consec-loss streak
         if (pnlDollars != null) risk.addPnl(pnlDollars);

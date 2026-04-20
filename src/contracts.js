@@ -59,6 +59,16 @@ function pointsToDollars(points, contractId) {
     return points * spec.pointValue;
 }
 
+// Round-turn commission per contract for the given product. Sourced from
+// COMMISSION_<CODE> env vars; returns 0 if not set so we never invent a fee.
+function getCommissionPerContract(contractId) {
+    const code = productCodeFromContractId(contractId);
+    if (!code) return 0;
+    const raw = process.env[`COMMISSION_${code}`];
+    const n   = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
 function dollarsToPoints(dollars, contractId) {
     const spec = getSpec(contractId);
     if (!spec || spec.pointValue === 0) return 0;
@@ -80,6 +90,7 @@ module.exports = {
     productCodeFromContractId,
     getSpec,
     pointsToDollars,
+    getCommissionPerContract,
     dollarsToPoints,
     roundToTick,
     FAMILIES,
