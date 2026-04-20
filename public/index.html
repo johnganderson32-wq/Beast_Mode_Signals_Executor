@@ -397,7 +397,7 @@
   <div class="status-item"><span class="dot dot-yellow" id="dot-rtc"></span><span class="label">RTC</span></div>
   <div class="status-item"><span class="dot dot-yellow" id="dot-ngrok"></span><span class="label">Ngrok</span></div>
   <span class="atm-badge standard" id="atm-badge">Standard</span>
-  <button class="ngrok-reveal-btn" id="ngrok-reveal-btn" onclick="toggleNgrokUrl()">URL</button>
+  <button class="ngrok-reveal-btn" id="ngrok-reveal-btn" onclick="toggleNgrokUrl()">WEBHOOK</button>
   <span class="ngrok-url-text" id="ngrok-url">---</span>
   <span class="sse-badge" id="sse-badge">SSE RECONNECTING</span>
   <button class="notif-btn" id="notif-btn" onclick="toggleMute()" title="Mute alerts">&#128276;</button>
@@ -672,7 +672,7 @@
   function toggleNgrokUrl() {
     var el  = document.getElementById('ngrok-url');
     var btn = document.getElementById('ngrok-reveal-btn');
-    if (el.style.display === 'block') { el.style.display = 'none'; btn.textContent  = 'URL'; }
+    if (el.style.display === 'block') { el.style.display = 'none'; btn.textContent  = 'WEBHOOK'; }
     else { el.textContent = el.dataset.url || '---'; el.style.display = 'block'; btn.textContent = 'HIDE'; }
   }
 
@@ -883,7 +883,7 @@
       setDot('dot-ngrok', h.ngrok && h.ngrok.connected);
       setDot('dot-rtc',   h.rtc && h.rtc.connected);
       var urlEl = document.getElementById('ngrok-url');
-      if (h.ngrok && h.ngrok.url) urlEl.dataset.url = h.ngrok.url;
+      if (h.ngrok && h.ngrok.url) urlEl.dataset.url = h.ngrok.url + '/webhook/signal';
     }).catch(function() {
       setDot('dot-auth', false); setDot('dot-ngrok', false); setDot('dot-rtc', false);
     });
