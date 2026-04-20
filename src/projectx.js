@@ -2,7 +2,8 @@
 
 // ProjectX API client.
 // Order types: 1=Limit  2=Market  4=Stop
-// Side:        0=Sell   1=Buy
+// Side:        0=Buy    1=Sell
+// Position.type: 1=Long  0=Short (matches EvilSignals production)
 
 const axios     = require('axios');
 const fs        = require('fs');
@@ -160,9 +161,19 @@ function getFixedQty(contractId) {
 }
 
 // ---------------------------------------------------------------------------
+// SIDE MAPPING — TopstepX: 0=Buy, 1=Sell (matches EvilSignals production)
+// ---------------------------------------------------------------------------
+function sidesForDirection(direction) {
+    const isBull = String(direction).toLowerCase() === 'bullish';
+    return { entrySide: isBull ? 0 : 1, exitSide: isBull ? 1 : 0 };
+}
+
+// ---------------------------------------------------------------------------
 // ORDER PLACEMENT
 // ---------------------------------------------------------------------------
 // Returns { orderIds: { entry, sl, tp1, target }, qty, contractId }
+// Throws with `stage`, `orderIds`, and `contractId` attached so the caller can
+// run safety flatten when entry filled but a protective order failed.
 async function placeOrder({ family, direction, stop, tp1, target, qty }) {
     await ensureAuth();
 
@@ -170,8 +181,7 @@ async function placeOrder({ family, direction, stop, tp1, target, qty }) {
     if (!accountId) throw new Error('PROJECTX_ACCOUNT_ID not set');
 
     const contractId = getContractIdForFamily(family);
-    const entrySide  = direction === 'bullish' ? 1 : 0;
-    const exitSide   = direction === 'bullish' ? 0 : 1;
+    const { entrySide, exitSide } = sidesForDirection(direction);
     const ts         = Date.now();
 
     // Round protective prices to the contract's tick size
@@ -181,54 +191,61 @@ async function placeOrder({ family, direction, stop, tp1, target, qty }) {
 
     const orderIds = {};
 
-    // 1. Market entry
-    const entryRes = await post('/Order/place', {
-        accountId, contractId,
-        type:      2,
-        side:      entrySide,
-        size:      qty,
-        customTag: `BEAST:ENTRY:${ts}`,
-    }, 'ENTRY');
-    orderIds.entry = entryRes?.orderId ?? entryRes?.id ?? null;
-    console.log(`[projectx] Entry: ${direction} ${qty}x ${contractId} (id=${orderIds.entry})`);
+    // 1. Market entry — failure here means no position opened, no cleanup needed
+    try {
+        const entryRes = await post('/Order/place', {
+            accountId, contractId,
+            type:      2,
+            side:      entrySide,
+            size:      qty,
+            customTag: `BEAST:ENTRY:${ts}`,
+        }, 'ENTRY');
+        orderIds.entry = entryRes?.orderId ?? entryRes?.id ?? null;
+        console.log(`[projectx] Entry: ${direction} ${qty}x ${contractId} (id=${orderIds.entry})`);
+    } catch (e) {
+        throw Object.assign(e, { stage: 'entry', orderIds, contractId });
+    }
 
-    // 2. Stop loss
-    const slRes = await post('/Order/place', {
-        accountId, contractId,
-        type:       4,
-        side:       exitSide,
-        size:       qty,
-        stopPrice:  slPrice,
-        customTag:  `BEAST:SL:${ts}`,
-    }, 'SL');
-    orderIds.sl = slRes?.orderId ?? slRes?.id ?? null;
-    console.log(`[projectx] SL @ ${slPrice} (id=${orderIds.sl})`);
+    // 2-4. Protective orders — any failure here leaves a naked position. The
+    // caller must run flattenPosition + cancel working orders on catch.
+    try {
+        const slRes = await post('/Order/place', {
+            accountId, contractId,
+            type:       4,
+            side:       exitSide,
+            size:       qty,
+            stopPrice:  slPrice,
+            customTag:  `BEAST:SL:${ts}`,
+        }, 'SL');
+        orderIds.sl = slRes?.orderId ?? slRes?.id ?? null;
+        console.log(`[projectx] SL @ ${slPrice} (id=${orderIds.sl})`);
 
-    // 3. TP1 (all contracts if qty=1, qty-1 otherwise)
-    const tp1Qty = qty === 1 ? 1 : qty - 1;
-    const tp1Res = await post('/Order/place', {
-        accountId, contractId,
-        type:       1,
-        side:       exitSide,
-        size:       tp1Qty,
-        limitPrice: tp1Price,
-        customTag:  `BEAST:TP1:${ts}`,
-    }, 'TP1');
-    orderIds.tp1 = tp1Res?.orderId ?? tp1Res?.id ?? null;
-    console.log(`[projectx] TP1 @ ${tp1Price} (${tp1Qty}ct, id=${orderIds.tp1})`);
-
-    // 4. Runner target — only when qty ≥ 2
-    if (qty >= 2) {
-        const tgtRes = await post('/Order/place', {
+        const tp1Qty = qty === 1 ? 1 : qty - 1;
+        const tp1Res = await post('/Order/place', {
             accountId, contractId,
             type:       1,
             side:       exitSide,
-            size:       1,
-            limitPrice: tgtPrice,
-            customTag:  `BEAST:TARGET:${ts}`,
-        }, 'TARGET');
-        orderIds.target = tgtRes?.orderId ?? tgtRes?.id ?? null;
-        console.log(`[projectx] Target @ ${tgtPrice} (1ct, id=${orderIds.target})`);
+            size:       tp1Qty,
+            limitPrice: tp1Price,
+            customTag:  `BEAST:TP1:${ts}`,
+        }, 'TP1');
+        orderIds.tp1 = tp1Res?.orderId ?? tp1Res?.id ?? null;
+        console.log(`[projectx] TP1 @ ${tp1Price} (${tp1Qty}ct, id=${orderIds.tp1})`);
+
+        if (qty >= 2) {
+            const tgtRes = await post('/Order/place', {
+                accountId, contractId,
+                type:       1,
+                side:       exitSide,
+                size:       1,
+                limitPrice: tgtPrice,
+                customTag:  `BEAST:TARGET:${ts}`,
+            }, 'TARGET');
+            orderIds.target = tgtRes?.orderId ?? tgtRes?.id ?? null;
+            console.log(`[projectx] Target @ ${tgtPrice} (1ct, id=${orderIds.target})`);
+        }
+    } catch (e) {
+        throw Object.assign(e, { stage: 'protective', orderIds, contractId });
     }
 
     return { orderIds, qty, contractId };
@@ -305,7 +322,7 @@ async function flattenPosition(contractId, acctId) {
         const positions = await getOpenPositions(accountId);
         const pos = positions.find(p => p.contractId === contractId);
         if (pos && (pos.size > 0)) {
-            const exitSide = pos.type === 1 ? 1 : 0;   // 1 = buy-to-close (short pos), 0 = sell-to-close (long pos)
+            const exitSide = pos.type === 1 ? 1 : 0;   // long (type 1) → sell=1; short (type 0) → buy=0
             const res = await post('/Order/place', {
                 accountId,
                 contractId,
@@ -352,4 +369,5 @@ module.exports = {
     cancelOrder, cancelAllOrdersFor,
     flattenPosition, getFilledOrder, waitForFillPrice,
     getContractIdForFamily, getFixedQty,
+    sidesForDirection,
 };

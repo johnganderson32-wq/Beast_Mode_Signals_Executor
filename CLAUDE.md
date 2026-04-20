@@ -44,7 +44,7 @@ logs/
 
 Three or four orders per signal (no bracket API):
 
-1. **Market entry** (type 2) — full qty, side: 1=Buy (bullish), 0=Sell (bearish)
+1. **Market entry** (type 2) — full qty, side: 0=Buy (bullish), 1=Sell (bearish)
 2. **Stop SL** (type 4) — full qty at `stop` price, exit side
 3. **Limit TP1** (type 1) — qty-1 contracts at `tp1` (or full qty if qty=1), exit side
 4. **Limit Target** (type 1) — 1 contract runner at `target` (only when qty >= 2), exit side
@@ -226,7 +226,7 @@ Two tabs: **EXECUTOR** (active trade + live log + settings) and **PERFORMANCE** 
 ## Code Style / Rules
 
 - Express 5 (path-to-regexp v8): catch-all routes use `/{*splat}` not `*`
-- ProjectX order types: 1=Limit, 2=Market, 4=Stop. Side: 0=Sell, 1=Buy
+- ProjectX order types: 1=Limit, 2=Market, 4=Stop. Side: 0=Buy, 1=Sell. Position.type: 1=Long, 0=Short
 - All risk caps are DOLLARS. Points/ticks only used inside order placement math.
 - Do not add EAI/IBOB/TMAG/ZTAR logic — this executor handles BEAST signals only
 - Do not add PM2 — traders run `npm start` directly

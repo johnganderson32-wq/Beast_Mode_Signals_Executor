@@ -167,8 +167,10 @@ function createWebhookRouter() {
         });
 
         // ── Place orders ────────────────────────────────────────────────────
-        let orderResult = null;
-        let orderError  = null;
+        let orderResult   = null;
+        let orderError    = null;
+        let orderStage    = null;
+        let safetyFlatten = null;
         try {
             orderResult = await px.placeOrder({ family, direction, stop, tp1, target, qty });
             db.update(trade.id, { orderIds: orderResult.orderIds });
@@ -176,7 +178,25 @@ function createWebhookRouter() {
             risk.incrementSignals(true);
         } catch (e) {
             orderError = e.message;
-            console.error(`[webhook] Order failed: ${e.message}`);
+            orderStage = e.stage || null;
+            console.error(`[webhook] Order failed (stage=${orderStage || 'unknown'}): ${e.message}`);
+
+            if (e.orderIds) db.update(trade.id, { orderIds: e.orderIds });
+
+            // Safety net: entry filled but a protective order failed → naked position.
+            // Flatten at broker and cancel any working protective orders so we never
+            // hold direction without SL.
+            if (e.stage === 'protective' && e.orderIds?.entry && e.contractId) {
+                console.error(`[webhook] SAFETY FLATTEN — entry ${e.orderIds.entry} filled but protective order failed; closing ${e.contractId}`);
+                logStream.addLine(`[SAFETY FLATTEN] ${instrument} — protective order failed after entry; closing position`);
+                try {
+                    safetyFlatten = await px.flattenPosition(e.contractId);
+                } catch (flatErr) {
+                    console.error(`[webhook] Safety flatten failed: ${flatErr.message}`);
+                    safetyFlatten = { closed: false, error: flatErr.message };
+                }
+            }
+
             db.update(trade.id, { status: 'MANUAL', exitTime: new Date().toISOString() });
             risk.incrementSignals(false);
         }
@@ -184,7 +204,8 @@ function createWebhookRouter() {
         logSignal(payload, orderError ? 'order_failed' : 'accepted', {
             tradeId: trade.id,
             qty,
-            ...(orderError ? { error: orderError } : {}),
+            ...(orderError   ? { error: orderError, stage: orderStage } : {}),
+            ...(safetyFlatten ? { safetyFlatten } : {}),
         });
 
         return res.status(200).json({
