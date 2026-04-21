@@ -113,6 +113,7 @@ function buildState(t) {
         tp1Booked: false,
         tp2Booked: false,
         slBooked:  false,
+        slResizedOnTp1: false,  // race guard: SL already shrunk to runner qty
         settled:   false,
         tickSize:              spec.tickSize,
         pointValue:            spec.pointValue,
@@ -242,6 +243,21 @@ async function settleTrade(contractId, outcome, source) {
     // gap that left a 4-lot BUY stop sitting after full-target on 2026-04-21.
     try { await px.cancelAllOrdersFor(contractId, st.accountId); } catch {}
 
+    // SAFETY NET: after settlement we should be flat. If a stale SL over-filled
+    // or any other path left a reverse position, flatten it at market before
+    // we remove the cache entry. This is the last line of defense against the
+    // 2026-04-21 orphaned-SL incident.
+    try {
+        const positions = await px.getOpenPositions(st.accountId);
+        const residual  = positions.find(p => p.contractId === contractId);
+        if (residual && residual.size > 0) {
+            console.error(`[SAFETY] ${st.label} residual ${residual.size}ct position after settle — emergency flatten`);
+            await px.flattenPosition(contractId, st.accountId);
+        }
+    } catch (e) {
+        console.warn(`[SAFETY] ${st.label} post-settle check failed: ${e.message}`);
+    }
+
     removeFromCache(contractId);
 }
 
@@ -276,6 +292,24 @@ async function handleOrderUpdate(d) {
         st.tp1Booked = true;
         saveCache();
         console.log(`[RTC] ${st.label} TP1 filled @ ${st.tp1FillPrice ?? st.tp1Price}`);
+
+        // CRITICAL: shrink SL from full-qty to runner-qty. If this fails we
+        // flatten immediately — leaving a stale full-qty SL is how we ended
+        // up short 2ct MNQ @ 26723.75 on 2026-04-21 when SL over-filled.
+        if (st.tp2Qty > 0 && st.slOrderId && !st.slResizedOnTp1) {
+            st.slResizedOnTp1 = true;
+            saveCache();
+            try {
+                await px.modifyOrder(st.slOrderId, { size: st.tp2Qty }, st.accountId);
+                console.log(`[RTC] ${st.label} SL resized ${st.size}→${st.tp2Qty}ct (runner only)`);
+            } catch (e) {
+                console.error(`[RTC] ${st.label} SL resize FAILED: ${e.message} — emergency flatten`);
+                try { await px.flattenPosition(contractId, st.accountId); } catch {}
+                await settleTrade(contractId, 'MANUAL', 'RTC-SAFETY');
+                return;
+            }
+        }
+
         if (st.tp2Qty === 0) {
             await sleep(FILL_SETTLE_MS);
             await settleTrade(contractId, 'TP1', 'RTC');
@@ -320,6 +354,25 @@ async function handlePositionUpdate(d) {
         // Reflect actual entry price on the trade record for display + downstream P&L
         db.update(st.tradeId, { entryPrice: st.actualEntryPrice });
         saveCache();
+    }
+
+    // Position shrunk to the runner size — TP1 fill via position-event path.
+    // If the order-event path didn't beat us to the SL resize, do it now.
+    if (size > 0 && st.tp2Qty > 0 && size === st.tp2Qty
+            && !st.tp1Booked && !st.slResizedOnTp1 && st.slOrderId) {
+        st.tp1Booked = true;
+        st.slResizedOnTp1 = true;
+        saveCache();
+        console.log(`[RTC] ${st.label} position shrunk to runner — inferring TP1 fill`);
+        try {
+            await px.modifyOrder(st.slOrderId, { size: st.tp2Qty }, st.accountId);
+            console.log(`[RTC] ${st.label} SL resized ${st.size}→${st.tp2Qty}ct (position-event path)`);
+        } catch (e) {
+            console.error(`[RTC] ${st.label} SL resize FAILED (pos path): ${e.message} — emergency flatten`);
+            try { await px.flattenPosition(st.contractId, st.accountId); } catch {}
+            await settleTrade(st.contractId, 'MANUAL', 'RTC-SAFETY');
+            return;
+        }
     }
 
     // Position closed — fallback path if an order fill event was dropped
@@ -471,4 +524,7 @@ module.exports = {
     registerTrade,
     settleTrade,              // exposed for manual testing only
     _state: () => activeTrades,
+    _handleOrderUpdate:    handleOrderUpdate,
+    _handlePositionUpdate: handlePositionUpdate,
+    _handleTradeUpdate:    handleTradeUpdate,
 };

@@ -267,6 +267,16 @@ async function getOpenOrders(acctId) {
     return data?.orders || [];
 }
 
+// Modify a working order. TopstepX supports changing size / stopPrice /
+// limitPrice on a resting order atomically — single call, no cancel+replace
+// race window. This is how we shrink the SL from full-qty to runner-qty
+// when TP1 fills, so the SL can't over-fill and create a reverse position.
+async function modifyOrder(orderId, fields, acctId) {
+    if (orderId == null) throw new Error('modifyOrder: orderId required');
+    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    return post('/Order/modify', { accountId, orderId, ...fields }, `MODIFY:${orderId}`);
+}
+
 async function cancelOrder(orderId, acctId) {
     if (orderId == null) return;
     const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
@@ -367,6 +377,7 @@ function getAuthStatus() {
 module.exports = {
     authenticate, ensureAuth, placeOrder, getAuthStatus,
     getOpenPositions, getOpenOrders,
+    modifyOrder,
     cancelOrder, cancelAllOrdersFor,
     flattenPosition, getFilledOrder, waitForFillPrice,
     getContractIdForFamily, getFixedQty,
