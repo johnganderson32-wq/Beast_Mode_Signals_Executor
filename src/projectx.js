@@ -371,4 +371,5 @@ module.exports = {
     flattenPosition, getFilledOrder, waitForFillPrice,
     getContractIdForFamily, getFixedQty,
     sidesForDirection,
+    getToken: () => token,
 };

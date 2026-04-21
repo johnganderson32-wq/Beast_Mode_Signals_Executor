@@ -30,7 +30,8 @@ app.get('/{*splat}', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-const px = require('./projectx');
+const px       = require('./projectx');
+const executor = require('./executor');
 
 app.listen(PORT, async () => {
     console.log(`[beast-executor] Listening on http://localhost:${PORT}`);
@@ -41,5 +42,15 @@ app.listen(PORT, async () => {
         await px.authenticate();
     } catch (e) {
         console.error(`[beast-executor] ProjectX auth failed on boot: ${e.message}`);
+    }
+
+    // Start the RTC hub + 5s poll. Boot the executor even if RTC start fails —
+    // the poll fallback still reconciles fills by REST alone.
+    try {
+        const tok = px.getToken();
+        const acctId = parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+        await executor.start(tok, acctId);
+    } catch (e) {
+        console.error(`[executor] start failed: ${e.message} — 5s REST poll still active`);
     }
 });

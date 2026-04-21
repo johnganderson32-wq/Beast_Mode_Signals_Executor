@@ -6,6 +6,7 @@ const settings  = require('./settings');
 const risk      = require('./risk');
 const logStream = require('./log-stream');
 const px        = require('./projectx');
+const monitor   = require('./monitor');
 const contracts = require('./contracts');
 const { fetchAccounts } = require('../scripts/fetchAccounts');
 
@@ -38,7 +39,7 @@ function createDashboardRouter() {
         res.json({
             projectx: auth,
             ngrok:    { connected: ngrokOk, url: ngrokUrl || null },
-            rtc:      { connected: false, reason: 'not yet implemented' },
+            rtc:      { connected: monitor.isConnected() },
         });
     });
 

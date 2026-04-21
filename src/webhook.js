@@ -9,6 +9,7 @@ const risk      = require('./risk');
 const settings  = require('./settings');
 const contracts = require('./contracts');
 const logStream = require('./log-stream');
+const executor  = require('./executor');
 const { LOG_DIR } = require('./paths');
 
 // Required fields from the BEAST Mode Pine payload
@@ -197,9 +198,12 @@ function createWebhookRouter() {
         let safetyFlatten = null;
         try {
             orderResult = await px.placeOrder({ family, direction, stop, tp1, target, qty });
-            db.update(trade.id, { orderIds: orderResult.orderIds });
+            const updated = db.update(trade.id, { orderIds: orderResult.orderIds });
             logStream.addLine(`[ENTRY] BEAST ${direction.toUpperCase()} ${instrument} ${qty}ct entry=${entryPrice} SL=${stop} TP1=${tp1} T=${target}`);
             risk.incrementSignals(true);
+            // Hand off to the executor so RTC events + 5s poll drive settlement
+            try { executor.registerTrade(updated || trade); }
+            catch (regErr) { console.warn(`[webhook] executor.registerTrade: ${regErr.message}`); }
         } catch (e) {
             orderError = e.message;
             orderStage = e.stage || null;
