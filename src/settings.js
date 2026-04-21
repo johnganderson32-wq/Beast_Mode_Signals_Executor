@@ -82,14 +82,35 @@ function restorePersisted() {
     }
 }
 
+// Change listeners — invoked with (changedKeys: Set<string>) whenever set() or
+// merge() actually mutates the store. Used by sessionClose.js to reschedule
+// the force-flatten timer when the user edits sessionClose live from the
+// dashboard without restarting the process.
+const listeners = new Set();
+
+function notify(keys) {
+    if (!keys || keys.size === 0) return;
+    for (const fn of listeners) {
+        try { fn(keys); }
+        catch (e) { console.warn(`[settings] listener failed: ${e.message}`); }
+    }
+}
+
+function onChange(fn) {
+    if (typeof fn === 'function') listeners.add(fn);
+    return () => listeners.delete(fn);
+}
+
 function get(key) {
     return store[key];
 }
 
 function set(key, value) {
     if (!(key in store)) return;
+    const prev = store[key];
     store[key] = value;
     persist();
+    if (prev !== value) notify(new Set([key]));
 }
 
 function getAll() {
@@ -97,14 +118,20 @@ function getAll() {
 }
 
 function merge(partial) {
-    let changed = 0;
+    const changedKeys = new Set();
     for (const [k, v] of Object.entries(partial || {})) {
-        if (k in store) { store[k] = v; changed++; }
+        if (k in store) {
+            if (store[k] !== v) changedKeys.add(k);
+            store[k] = v;
+        }
     }
-    if (changed > 0) persist();
+    if (changedKeys.size > 0) {
+        persist();
+        notify(changedKeys);
+    }
 }
 
 // Apply persisted overrides on top of the env-seeded defaults above.
 restorePersisted();
 
-module.exports = { get, set, getAll, merge };
+module.exports = { get, set, getAll, merge, onChange };

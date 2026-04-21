@@ -30,8 +30,9 @@ app.get('/{*splat}', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-const px       = require('./projectx');
-const executor = require('./executor');
+const px           = require('./projectx');
+const executor     = require('./executor');
+const sessionClose = require('./sessionClose');
 
 app.listen(PORT, async () => {
     console.log(`[beast-executor] Listening on http://localhost:${PORT}`);
@@ -52,5 +53,13 @@ app.listen(PORT, async () => {
         await executor.start(tok, acctId);
     } catch (e) {
         console.error(`[executor] start failed: ${e.message} — 5s REST poll still active`);
+    }
+
+    // Arm the scheduled force-flatten at sessionClose ET. Blank sessionClose
+    // = no schedule (consistent with risk.js:isPastSessionClose semantics).
+    try {
+        sessionClose.start();
+    } catch (e) {
+        console.error(`[session-close] start failed: ${e.message}`);
     }
 });
