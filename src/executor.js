@@ -497,12 +497,13 @@ async function start(token, accountId) {
         console.warn('[executor] start: no token — RTC not started (call start() again after auth)');
         return;
     }
-    await monitor.startRtc(token, accountId, {
+
+    const handlersBag = {
         onOrder:    handleOrderUpdate,
         onPosition: handlePositionUpdate,
         onTrade:    handleTradeUpdate,
-    }, async () => {
-        // Permanent close — re-authenticate and restart RTC with a fresh token
+    };
+    const onPermClose = async () => {
         try {
             await px.authenticate({ force: true });
             const freshTok = px.getToken();
@@ -510,7 +511,24 @@ async function start(token, accountId) {
         } catch (e) {
             console.error(`[executor] RTC recovery failed: ${e.message}`);
         }
-    });
+    };
+
+    try {
+        await monitor.startRtc(token, accountId, handlersBag, onPermClose);
+    } catch (e) {
+        // Initial connect/subscribe failed — typically stale hub token even
+        // when the REST token is still within its 12h window. Force a fresh
+        // auth and retry once.
+        console.warn(`[executor] RTC startup failed: ${e.message} — refreshing token and retrying once`);
+        try {
+            await px.authenticate({ force: true });
+            const freshTok = px.getToken();
+            if (freshTok) await monitor.startRtc(freshTok, accountId, handlersBag, onPermClose);
+        } catch (retryErr) {
+            console.error(`[executor] RTC retry failed: ${retryErr.message} — 5s REST poll still active`);
+            throw retryErr;
+        }
+    }
 }
 
 async function stop() {
