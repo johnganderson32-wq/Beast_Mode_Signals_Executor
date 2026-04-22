@@ -34,6 +34,10 @@ const path = require('path');
 const settings = require('./settings');
 const px       = require('./projectx');
 const { LOG_DIR } = require('./paths');
+const journal               = require('./journal');
+const pnlAudit              = require('./pnlAudit');
+const pnlReconcile          = require('./pnlReconcile');
+const { fetchSessionTrades } = require('./projectxTradeSearch');
 
 const SCHEMA_VERSION = 1;
 const AUDIT_FILE     = path.join(LOG_DIR, 'session-close.jsonl');
@@ -222,6 +226,112 @@ async function flattenAllOpenPositions(reason = DISPOSITION) {
 }
 
 // ---------------------------------------------------------------------------
+// AUDIT RECONCILE — 16:30 ET broker P&L crosscheck
+//
+// Runs AFTER the flatten completes. Pulls broker trade fills from
+// /Trade/search across every account that traded since prior Globex open,
+// reconciles against the journal, hands deltas to pnlAudit. Sequence copied
+// from EvilSignals-Executor/src/executor.js:runPnlAuditReconcile (2026-04-22).
+// ---------------------------------------------------------------------------
+function priorGlobexOpenIso(now = new Date()) {
+    const opts = { timeZone: 'America/New_York', hour: 'numeric', hour12: false };
+    const etH  = Number(new Intl.DateTimeFormat('en-US', opts).formatToParts(now).find(p => p.type === 'hour').value);
+    // 18:00 ET today if already past 18:00 ET; otherwise yesterday 18:00 ET.
+    // At 16:30 ET we're before 18:00, so this returns yesterday 18:00 ET.
+    const ref = new Date(now);
+    if (etH < 18) ref.setTime(ref.getTime() - 24 * 60 * 60 * 1000);
+    const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(ref);
+    const naiveUtc = new Date(`${d}T18:00:00Z`);
+    const etParts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    }).formatToParts(naiveUtc);
+    const get = t => Number(etParts.find(p => p.type === t).value);
+    const asEtUtcMs = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+    const offsetMs  = asEtUtcMs - naiveUtc.getTime();
+    return new Date(naiveUtc.getTime() - offsetMs).toISOString();
+}
+
+async function runPnlAuditReconcile() {
+    const endTimestamp   = new Date().toISOString();
+    const startTimestamp = priorGlobexOpenIso(new Date());
+
+    // Collect every account that could have traded since prior Globex open:
+    //   - current settings.accountId (the live account)
+    //   - any accountId seen in journal history since rollover
+    // Skip duplicates + null/empty IDs.
+    const accountIds = [];
+    const seen = new Set();
+
+    const liveAid = settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID;
+    if (liveAid != null && String(liveAid).trim() !== '' && !seen.has(String(liveAid))) {
+        seen.add(String(liveAid));
+        accountIds.push(liveAid);
+    }
+    try {
+        for (const aid of journal.getDistinctAccounts()) {
+            if (aid != null && !seen.has(String(aid))) {
+                seen.add(String(aid));
+                accountIds.push(aid);
+            }
+        }
+    } catch (e) {
+        console.warn(`[AUDIT] journal.getDistinctAccounts failed: ${e.message}`);
+    }
+
+    if (accountIds.length === 0) {
+        console.warn('[AUDIT] no accounts to reconcile — skipping');
+        writeAudit({ event: 'audit_skip', reason: 'no_accounts' });
+        return;
+    }
+
+    console.log(`[AUDIT] Reconcile window ${startTimestamp} → ${endTimestamp} across ${accountIds.length} account(s): ${accountIds.join(', ')}`);
+
+    const allTrades = [];
+    for (const aid of accountIds) {
+        try {
+            const trades = await fetchSessionTrades({
+                accountId:      aid,
+                startTimestamp,
+                endTimestamp,
+            });
+            for (const t of trades) allTrades.push(t);
+        } catch (e) {
+            console.warn(`[AUDIT] Trade search failed for acct=${aid}: ${e.message}`);
+            writeAudit({ event: 'audit_trade_search_failed', accountId: aid, error: e.message });
+            // Continue with other accounts — partial data is better than none.
+        }
+    }
+
+    const executorOrders = journal.getHistory();
+    const recon = pnlReconcile.reconcileSession({ trades: allTrades, executorOrders });
+
+    console.log(
+        `[AUDIT] Reconcile: ${recon.deltas.length} delta(s), ` +
+        `${recon.unmatchedBrokerTrades.length} unmatched broker trade(s), ` +
+        `${recon.unmatchedExecutorOrders.length} unmatched executor order(s)`,
+    );
+    for (const u of recon.unmatchedBrokerTrades) {
+        console.log(`[AUDIT]   UNMATCHED BROKER: tradeId=${u.tradeId} orderId=${u.orderId} contract=${u.contractId} netPnl=$${u.brokerNetPnl}`);
+    }
+    for (const u of recon.unmatchedExecutorOrders) {
+        console.log(`[AUDIT]   UNMATCHED EXECUTOR: id=${u.localTradeId} ${u.symbol} ${u.side} ${u.outcome} ids=${u.executorOrderIds.join(',') || '(none)'}`);
+    }
+
+    writeAudit({
+        event: 'audit_complete',
+        brokerTradeCount:      allTrades.length,
+        deltaCount:            recon.deltas.length,
+        unmatchedBrokerCount:  recon.unmatchedBrokerTrades.length,
+        unmatchedExecutorCount: recon.unmatchedExecutorOrders.length,
+    });
+
+    try { pnlAudit.recordSessionDeltas(recon); }
+    catch (e) { console.error(`[AUDIT] pnlAudit.recordSessionDeltas: ${e.message}`); }
+}
+
+// ---------------------------------------------------------------------------
 // SCHEDULER
 // ---------------------------------------------------------------------------
 function clearPending() {
@@ -282,6 +392,17 @@ function scheduleNext() {
             console.error(`[session-close] flatten run threw: ${e.message}`);
             writeAudit({ event: 'error', error: e.message });
         }
+        // After flatten, reset the cumulative audit counter then run the broker
+        // P&L reconciliation. Reset-first matches EAI's spec order: counter
+        // reset is step 1 of session-end, so any deltas from this reconcile
+        // land cleanly into a fresh counter.
+        try { pnlAudit.sessionEndReset(); }
+        catch (e) { console.error(`[AUDIT] sessionEndReset: ${e.message}`); }
+        try { await runPnlAuditReconcile(); }
+        catch (e) {
+            console.error(`[AUDIT] runPnlAuditReconcile threw: ${e.message}`);
+            writeAudit({ event: 'audit_error', error: e.message });
+        }
         // Re-arm for tomorrow. msUntilNextCloseET will see "already past"
         // (we just fired) and roll to the next ET HH:MM ~24h out.
         scheduleNext();
@@ -312,6 +433,8 @@ module.exports = {
     _msUntilNextCloseET: msUntilNextCloseET,
     _parseHhMm:          parseHhMm,
     _flattenNow:         flattenAllOpenPositions,
+    _runPnlAuditReconcile: runPnlAuditReconcile,
+    _priorGlobexOpenIso:   priorGlobexOpenIso,
     _state: () => ({ scheduledForMsUtc, hasPendingTimer: !!pendingTimer }),
     DISPOSITION,
     AUDIT_FILE,

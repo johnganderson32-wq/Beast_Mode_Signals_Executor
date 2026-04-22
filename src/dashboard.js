@@ -8,6 +8,8 @@ const logStream = require('./log-stream');
 const px        = require('./projectx');
 const monitor   = require('./monitor');
 const contracts = require('./contracts');
+const journal   = require('./journal');
+const pnlAudit  = require('./pnlAudit');
 const { fetchAccounts } = require('../scripts/fetchAccounts');
 
 const ACCOUNTS_TTL_MS = 60 * 1000;
@@ -159,14 +161,14 @@ function createDashboardRouter() {
                 const exitTime = new Date().toISOString();
 
                 for (const t of tradesForContract) {
-                    let pnlPoints = null, pnlDollars = null, commission = null, rMultiple = null;
+                    let pnlPoints = null, pnlDollars = null, commission = null, rMultiple = null, grossDollars = 0;
                     if (fillPx != null && t.entryPrice != null) {
                         const raw = fillPx - t.entryPrice;
                         pnlPoints  = t.direction === 'bullish' ? raw : -raw;
                         pnlPoints  = Math.round(pnlPoints * 100) / 100;
-                        const gross = contracts.pointsToDollars(pnlPoints, t.contractId) * (t.qty || 1);
-                        commission  = Math.round(contracts.getCommissionPerContract(t.contractId) * (t.qty || 1) * 100) / 100;
-                        pnlDollars  = Math.round((gross - commission) * 100) / 100;
+                        grossDollars = contracts.pointsToDollars(pnlPoints, t.contractId) * (t.qty || 1);
+                        commission   = Math.round(contracts.getCommissionPerContract(t.contractId) * (t.qty || 1) * 100) / 100;
+                        pnlDollars   = Math.round((grossDollars - commission) * 100) / 100;
                         if (t.rDist > 0) rMultiple = Math.round((pnlPoints / t.rDist) * 100) / 100;
                         risk.addPnl(pnlDollars);
                     }
@@ -179,6 +181,11 @@ function createDashboardRouter() {
                         commission,
                         rMultiple,
                     });
+                    // Mirror to journal so the Performance tab + 16:30 audit see this close.
+                    try {
+                        journal.addTradePnl(t.id, Math.round(grossDollars * 100) / 100);
+                        journal.finalizeTrade(t.id, 'MANUAL', commission || 0);
+                    } catch (jerr) { console.warn(`[flatten] journal mirror: ${jerr.message}`); }
                     // MANUAL does not touch the streak
                     closed++;
                 }
@@ -214,24 +221,121 @@ function createDashboardRouter() {
         const now  = exitTime || new Date().toISOString();
         const exit = exitPrice != null && exitPrice !== '' ? parseFloat(exitPrice) : null;
 
-        let rMultiple = null, pnlPoints = null, pnlDollars = null, commission = null;
+        let rMultiple = null, pnlPoints = null, pnlDollars = null, commission = null, grossDollars = 0;
         if (exit !== null && trade.entryPrice != null) {
             const raw = exit - trade.entryPrice;
-            pnlPoints  = trade.direction === 'bullish' ? raw : -raw;
-            pnlPoints  = Math.round(pnlPoints * 100) / 100;
-            const gross = contracts.pointsToDollars(pnlPoints, trade.contractId) * (trade.qty || 1);
-            commission  = Math.round(contracts.getCommissionPerContract(trade.contractId) * (trade.qty || 1) * 100) / 100;
-            pnlDollars  = Math.round((gross - commission) * 100) / 100;
+            pnlPoints    = trade.direction === 'bullish' ? raw : -raw;
+            pnlPoints    = Math.round(pnlPoints * 100) / 100;
+            grossDollars = contracts.pointsToDollars(pnlPoints, trade.contractId) * (trade.qty || 1);
+            commission   = Math.round(contracts.getCommissionPerContract(trade.contractId) * (trade.qty || 1) * 100) / 100;
+            pnlDollars   = Math.round((grossDollars - commission) * 100) / 100;
             if (trade.rDist > 0) rMultiple = Math.round((pnlPoints / trade.rDist) * 100) / 100;
         }
 
         const updated = db.update(id, { status, exitPrice: exit, exitTime: now, rMultiple, pnlPoints, pnlDollars, commission });
+
+        // Mirror to journal so /api/journal views + 16:30 audit see this close.
+        try {
+            if (pnlDollars != null) journal.addTradePnl(id, Math.round(grossDollars * 100) / 100);
+            journal.finalizeTrade(id, status, commission || 0);
+        } catch (jerr) { console.warn(`[trades PATCH] journal mirror: ${jerr.message}`); }
 
         // Wire into risk: add P&L (dollars) + update consec-loss streak
         if (pnlDollars != null) risk.addPnl(pnlDollars);
         risk.recordTradeResult(status, pnlDollars || 0);
 
         res.json(updated);
+    });
+
+    // ── Journal views (per-day trade list + stats) ──────────────────────────
+    // GET /api/journal/dates             — list of YYYY-MM-DD with journal files
+    // GET /api/journal?date=YYYY-MM-DD   — trades + stats for one trading day
+    // GET /api/journal/all               — all-time aggregate + per-day rollup
+    router.get('/journal/dates', (req, res) => {
+        try {
+            res.json({ dates: journal.getJournalDates() });
+        } catch (e) {
+            console.error(`[journal dates] ${e.message}`);
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    router.get('/journal', (req, res) => {
+        try {
+            const date      = req.query.date || journal.tradingDayStr();
+            const accountId = req.query.accountId || null;
+            const stats     = journal.getStats(date, accountId);
+            res.json({ date, ...stats });
+        } catch (e) {
+            console.error(`[journal] ${e.message}`);
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    router.get('/journal/all', (req, res) => {
+        try {
+            const accountId = req.query.accountId || null;
+            res.json(journal.getAggregateStats(accountId));
+        } catch (e) {
+            console.error(`[journal all] ${e.message}`);
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // ── P&L audit API ──────────────────────────────────────────────────────
+    // GET  /api/audit/queue         — current queue + halt status + thresholds
+    // POST /api/audit/manual-flag   — append a manual entry (body: note, orderId?, delta?)
+    // POST /api/audit/mark-reviewed — archive queue; clears halt if active
+    // POST /api/audit/re-enable     — clears halt only (queue retained)
+    router.get('/audit/queue', (req, res) => {
+        try {
+            const queue = pnlAudit.getQueue();
+            const halt  = pnlAudit.getHaltInfo();
+            res.json({
+                queue,
+                halted:          halt.halted,
+                haltedAt:        halt.haltedAt,
+                cumulativeDelta: halt.cumulativeDelta,
+                flagThreshold:   pnlAudit.FLAG_DELTA_USD,
+                haltThreshold:   pnlAudit.HALT_DELTA_USD,
+            });
+        } catch (e) {
+            console.error(`[audit queue] ${e.message}`);
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    router.post('/audit/manual-flag', (req, res) => {
+        try {
+            const entry = pnlAudit.manualFlag(req.body || {});
+            console.log(`[AUDIT] Manual flag added: ${JSON.stringify(entry)}`);
+            res.json({ ok: true, entry });
+        } catch (e) {
+            console.error(`[audit manual-flag] ${e.message}`);
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    router.post('/audit/mark-reviewed', (req, res) => {
+        try {
+            const result = pnlAudit.markReviewed();
+            console.log(`[AUDIT] Mark-reviewed: archived=${result.archived} clearedHalt=${result.clearedHalt}`);
+            res.json({ ok: true, ...result });
+        } catch (e) {
+            console.error(`[audit mark-reviewed] ${e.message}`);
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    router.post('/audit/re-enable', (req, res) => {
+        try {
+            const result = pnlAudit.reEnable();
+            console.log(`[AUDIT] Re-enable: clearedHalt=${result.clearedHalt}`);
+            res.json({ ok: true, ...result });
+        } catch (e) {
+            console.error(`[audit re-enable] ${e.message}`);
+            res.status(500).json({ error: e.message });
+        }
     });
 
     return router;

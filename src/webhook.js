@@ -10,6 +10,8 @@ const settings  = require('./settings');
 const contracts = require('./contracts');
 const logStream = require('./log-stream');
 const executor  = require('./executor');
+const journal   = require('./journal');
+const pnlAudit  = require('./pnlAudit');
 const { LOG_DIR } = require('./paths');
 
 // Required fields from the BEAST Mode Pine payload
@@ -147,6 +149,18 @@ function createWebhookRouter() {
             if (spec && fixedQty > 0) slDollarsFixedQty = slPts * spec.pointValue * fixedQty;
         } catch {}
 
+        // ── P&L audit halt gate ─────────────────────────────────────────────
+        // $10 cumulative delta trip fires a flatten + blocks all new entries
+        // until manual re-enable. Check before any other gate so the halt
+        // reason is the one surfaced in logs.
+        if (pnlAudit.isHalted()) {
+            const info = pnlAudit.getHaltInfo();
+            console.warn(`[webhook] BLOCKED — pnl_audit_halted (haltedAt=${info.haltedAt} cum=$${info.cumulativeDelta.toFixed(2)})`);
+            risk.incrementSignals(false);
+            logSignal(payload, 'blocked', { reason: 'pnl_audit_halted', haltedAt: info.haltedAt });
+            return res.status(200).json({ status: 'blocked', reason: 'pnl_audit_halted' });
+        }
+
         // ── Pre-trade gate stack ────────────────────────────────────────────
         const gate = risk.check({
             direction,
@@ -201,6 +215,19 @@ function createWebhookRouter() {
             const updated = db.update(trade.id, { orderIds: orderResult.orderIds });
             logStream.addLine(`[ENTRY] BEAST ${direction.toUpperCase()} ${instrument} ${qty}ct entry=${entryPrice} SL=${stop} TP1=${tp1} T=${target}`);
             risk.incrementSignals(true);
+            // Open journal record so the per-day Performance tab + 16:30 audit
+            // reconciliation see this trade. journal.openTrade is best-effort;
+            // a failure here does NOT block the live trade.
+            try {
+                const spec = contracts.getSpec(trade.contractId);
+                const acctId = parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+                journal.openTrade(updated || trade, {
+                    accountId: acctId,
+                    tickSize:  spec?.tickSize,
+                    tickValue: spec ? spec.tickSize * spec.pointValue : null,
+                    orderIds:  orderResult.orderIds,
+                });
+            } catch (jerr) { console.warn(`[webhook] journal.openTrade: ${jerr.message}`); }
             // Hand off to the executor so RTC events + 5s poll drive settlement
             try { executor.registerTrade(updated || trade); }
             catch (regErr) { console.warn(`[webhook] executor.registerTrade: ${regErr.message}`); }
@@ -226,6 +253,10 @@ function createWebhookRouter() {
             }
 
             db.update(trade.id, { status: 'MANUAL', exitTime: new Date().toISOString() });
+            // Mirror to journal if the openTrade call landed earlier (trade
+            // that never actually went live should not be OPEN in the journal).
+            try { journal.finalizeTrade(trade.id, 'MANUAL', 0); }
+            catch (jerr) { console.warn(`[webhook] journal.finalizeTrade: ${jerr.message}`); }
             risk.incrementSignals(false);
         }
 

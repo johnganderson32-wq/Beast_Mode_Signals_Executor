@@ -344,6 +344,81 @@
 
   .perf-no-data { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0; }
 
+  /* ── PERFORMANCE DATE NAV ── */
+  .perf-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .perf-nav-btn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 4px; padding: 6px 10px; cursor: pointer; font-family: var(--font);
+    font-size: 14px; min-width: 34px;
+  }
+  .perf-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .perf-nav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .perf-nav-date {
+    font-size: 13px; font-weight: 600; letter-spacing: 1px; color: var(--text);
+    min-width: 190px; text-align: center; text-transform: uppercase;
+  }
+  .perf-today-btn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 4px; padding: 6px 14px; cursor: pointer; font-family: var(--font);
+    font-size: 10px; letter-spacing: 1.5px;
+  }
+  .perf-today-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(255,107,0,0.1); }
+  .perf-acct-nav { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .perf-acct-btn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 4px; padding: 5px 12px; cursor: pointer; font-family: var(--font);
+    font-size: 10px; letter-spacing: 1.5px;
+  }
+  .perf-acct-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(255,107,0,0.1); }
+
+  /* ── P&L AUDIT PANEL ── */
+  .halt-banner {
+    background: rgba(239,68,68,0.12); border: 1px solid var(--red);
+    color: var(--red); padding: 10px 16px; border-radius: 6px;
+    font-size: 12px; margin-bottom: 14px; display: none;
+  }
+  .halt-banner.active { display: block; }
+  .halt-banner b { letter-spacing: 1px; }
+  .audit-panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px 18px; margin-top: 24px;
+  }
+  .audit-title {
+    font-size: 11px; letter-spacing: 1.5px; color: var(--muted);
+    text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 12px;
+  }
+  .audit-meta { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; text-transform: none; }
+  .audit-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 14px; }
+  .audit-actions button {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 12px; border-radius: 4px; font-family: var(--font);
+    font-size: 10px; letter-spacing: 1.5px; cursor: pointer; text-transform: uppercase;
+  }
+  .audit-actions button:hover { border-color: var(--accent); color: var(--accent); }
+  .audit-actions button.danger { border-color: var(--red); color: var(--red); }
+  .audit-actions button.danger:hover { background: rgba(239,68,68,0.1); }
+  .audit-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .audit-manual {
+    display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 14px;
+    padding: 10px; background: var(--bg); border-radius: 4px;
+  }
+  .audit-manual input {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    font-family: var(--font); font-size: 11px; padding: 4px 8px; border-radius: 3px;
+  }
+  .audit-manual button {
+    background: var(--accent); border: none; color: #fff; font-family: var(--font);
+    font-size: 10px; letter-spacing: 1px; padding: 4px 12px; border-radius: 3px; cursor: pointer;
+  }
+  .audit-msg { font-size: 10px; color: var(--muted); margin-left: 8px; align-self: center; }
+
+  /* Outcome pills for Performance table */
+  .oc-tp2    { background: rgba(34,197,94,0.12);  color: var(--green);  border: 1px solid rgba(34,197,94,0.35); padding: 2px 8px; border-radius: 3px; font-size: 10px; letter-spacing: 0.5px; }
+  .oc-sl     { background: rgba(239,68,68,0.12);  color: var(--red);    border: 1px solid rgba(239,68,68,0.35); padding: 2px 8px; border-radius: 3px; font-size: 10px; letter-spacing: 0.5px; }
+  .oc-sl1    { background: rgba(245,158,11,0.12); color: var(--yellow); border: 1px solid rgba(245,158,11,0.35); padding: 2px 8px; border-radius: 3px; font-size: 10px; letter-spacing: 0.5px; }
+  .oc-flat   { background: rgba(245,158,11,0.12); color: var(--yellow); border: 1px solid rgba(245,158,11,0.35); padding: 2px 8px; border-radius: 3px; font-size: 10px; letter-spacing: 0.5px; }
+  .oc-open   { background: rgba(100,116,139,0.15); color: var(--muted); border: 1px solid rgba(100,116,139,0.35); padding: 2px 8px; border-radius: 3px; font-size: 10px; letter-spacing: 0.5px; }
+
   /* Manual outcome entry */
   .manual-outcome {
     display: flex; align-items: center; gap: 6px;
@@ -602,33 +677,94 @@
 </main>
 
 <div id="tab-performance">
+  <!-- Date navigation -->
+  <div class="perf-nav">
+    <button class="perf-nav-btn" id="perf-prev" onclick="perfNavDay(-1)" title="Previous day">&#9664;</button>
+    <span class="perf-nav-date" id="perf-date-label">TODAY</span>
+    <button class="perf-nav-btn" id="perf-next" onclick="perfNavDay(1)" title="Next day" disabled>&#9654;</button>
+    <button class="perf-today-btn active" id="perf-today-btn" onclick="perfNavToday()">TODAY</button>
+    <button class="perf-today-btn" id="perf-alltime-btn" onclick="perfNavAllTime()">ALL TIME</button>
+  </div>
+
+  <!-- Per-account filter (auto-populated from journal records) -->
+  <div class="perf-acct-nav" id="perf-acct-nav" style="display:none"></div>
+
+  <!-- Halt banner (shown only when $10 cumulative trip is active) -->
+  <div class="halt-banner" id="halt-banner">
+    <b>CUMULATIVE P&amp;L HALT ACTIVE</b> &mdash; <span id="halt-detail"></span>
+  </div>
+
+  <!-- Day-level stat cards -->
   <div class="stat-cards">
-    <div class="stat-card"><span class="sc-label">Trades</span><span class="sc-value" id="p-total">---</span></div>
-    <div class="stat-card"><span class="sc-label">Win Rate</span><span class="sc-value" id="p-winrate">---</span></div>
-    <div class="stat-card"><span class="sc-label">Expectancy</span><span class="sc-value" id="p-expect">---</span></div>
-    <div class="stat-card"><span class="sc-label">Profit Factor</span><span class="sc-value" id="p-pf">---</span></div>
-    <div class="stat-card"><span class="sc-label">Net $</span><span class="sc-value" id="p-net">---</span></div>
-    <div class="stat-card"><span class="sc-label">Wins</span><span class="sc-value" style="color:var(--green)" id="p-wins">---</span></div>
-    <div class="stat-card"><span class="sc-label">Losses</span><span class="sc-value" style="color:var(--red)" id="p-losses">---</span></div>
+    <div class="stat-card"><span class="sc-label">Trades</span><span class="sc-value" id="p-total">&mdash;</span></div>
+    <div class="stat-card"><span class="sc-label">Wins</span><span class="sc-value" style="color:var(--green)" id="p-wins">&mdash;</span></div>
+    <div class="stat-card"><span class="sc-label">Losses</span><span class="sc-value" style="color:var(--red)" id="p-losses">&mdash;</span></div>
+    <div class="stat-card"><span class="sc-label">BE</span><span class="sc-value" style="color:var(--yellow)" id="p-be">&mdash;</span></div>
+    <div class="stat-card"><span class="sc-label">Win %</span><span class="sc-value" id="p-winrate">&mdash;</span></div>
+    <div class="stat-card"><span class="sc-label" id="p-pnl-label">Daily P&amp;L</span><span class="sc-value" id="p-pnl">&mdash;</span></div>
   </div>
 
-  <div class="perf-table-wrap">
-    <table class="perf-table">
-      <thead>
-        <tr>
-          <th>ID</th><th>Time</th><th>Instrument</th><th>Dir</th><th>Qty</th>
-          <th>Entry</th><th>SL</th><th>TP1</th><th>Target</th>
-          <th>rDist</th><th>Comp%</th><th>Hour</th><th>Transition</th>
-          <th>Status</th><th>Exit</th><th>R</th><th>Pts</th><th>$</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="p-tbody"></tbody>
-    </table>
+  <!-- Day view: per-trade table -->
+  <div id="p-day-view">
+    <div class="perf-table-wrap">
+      <table class="perf-table">
+        <thead>
+          <tr>
+            <th>Time</th><th>Symbol</th><th>Side</th><th>Cts</th>
+            <th>Entry</th><th>TP1</th><th>TP2</th><th>SL</th>
+            <th>rDist</th><th>Comp%</th><th>Hour</th><th>Transition</th>
+            <th>Pts</th><th>Comm</th><th>P&amp;L</th><th>Outcome</th>
+          </tr>
+        </thead>
+        <tbody id="p-tbody"></tbody>
+      </table>
+    </div>
   </div>
 
-  <div style="margin-top:24px;">
-    <div style="font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:10px;">Net by Month ($)</div>
-    <div class="monthly-grid" id="p-monthly"></div>
+  <!-- All-time view: per-day rollup -->
+  <div id="p-all-view" style="display:none">
+    <div class="perf-table-wrap">
+      <table class="perf-table">
+        <thead>
+          <tr>
+            <th>Date</th><th>Trades</th><th>Wins</th><th>Losses</th><th>BE</th><th>Win %</th><th>P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody id="p-day-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- P&L audit panel -->
+  <div class="audit-panel" id="audit-panel">
+    <div class="audit-title">
+      P&amp;L AUDIT
+      <span class="audit-meta" id="audit-meta"></span>
+    </div>
+    <div class="audit-actions">
+      <button onclick="refreshAudit()">REFRESH</button>
+      <button class="danger" id="audit-mark-btn" onclick="markReviewed()">MARK REVIEWED &amp; ARCHIVE</button>
+      <button class="danger" id="audit-reenable-btn" onclick="reEnableAudit()" disabled>RE-ENABLE (CLEAR HALT)</button>
+    </div>
+    <div class="audit-manual">
+      <input type="text"   id="audit-note"    placeholder="Note" style="flex:2;min-width:200px">
+      <input type="number" id="audit-orderid" placeholder="Order ID (opt)" step="1" style="width:130px">
+      <input type="number" id="audit-delta"   placeholder="Delta $ (opt)" step="0.01" style="width:120px">
+      <input type="text"   id="audit-symbol"  placeholder="Symbol (opt)" style="width:90px">
+      <button onclick="addManualFlag()">ADD MANUAL FLAG</button>
+      <span class="audit-msg" id="audit-msg"></span>
+    </div>
+    <div class="perf-table-wrap">
+      <table class="perf-table">
+        <thead>
+          <tr>
+            <th>Logged</th><th>Source</th><th>Order ID</th><th>Symbol</th><th>Side</th>
+            <th>Executor $</th><th>Broker $</th><th>Delta</th><th>Note / Reason</th>
+          </tr>
+        </thead>
+        <tbody id="audit-tbody"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -1047,77 +1183,203 @@
   }
 
   // ── Performance Tab ───────────────────────────────────────────────────────
-  function pollPerformance() {
-    fetch('/api/stats').then(function(r) { return r.json(); }).then(function(s) {
-      document.getElementById('p-total').textContent   = s.trades       || '---';
-      document.getElementById('p-winrate').textContent = s.winRate      != null ? s.winRate + '%' : '---';
-      document.getElementById('p-expect').textContent  = s.expectancy   != null ? (s.expectancy  >= 0 ? '+' : '') + s.expectancy.toFixed(2)  + 'R' : '---';
-      document.getElementById('p-pf').textContent      = s.profitFactor != null ? s.profitFactor.toFixed(2) + 'x' : '---';
-      document.getElementById('p-net').textContent     = s.netDollars   != null ? (s.netDollars  >= 0 ? '+$' : '-$') + Math.abs(s.netDollars).toFixed(2)  : '---';
-      document.getElementById('p-wins').textContent    = s.wins         != null ? s.wins   : '---';
-      document.getElementById('p-losses').textContent  = s.losses       != null ? s.losses : '---';
+  // Per-day journal view (mirrors EAI Performance pattern, adapted for BEAST).
+  // State:
+  //   perfDate    null = today (trading-day rollover matches journal.js 18:00 ET)
+  //   perfAllTime false = day view, true = rollup-by-day view
+  //   perfAccount null = all accounts, otherwise accountId string
+  var perfDate    = null;
+  var perfAllTime = false;
+  var perfAccount = null;
 
-      var monthlyEl = document.getElementById('p-monthly');
-      if (s.monthly && Object.keys(s.monthly).length > 0) {
-        monthlyEl.innerHTML = Object.keys(s.monthly).sort().map(function(mo) {
-          var val = s.monthly[mo], color = val > 0 ? 'var(--green)' : val < 0 ? 'var(--red)' : 'var(--muted)';
-          return '<div class="month-card"><div class="mc-label">' + mo + '</div><div class="mc-value" style="color:' + color + '">' +
-            (val >= 0 ? '+$' : '-$') + Math.abs(val).toFixed(2) + '</div></div>';
-        }).join('');
-      } else {
-        monthlyEl.innerHTML = '<p class="perf-no-data">No monthly data yet</p>';
-      }
+  var OUTCOME_CLASS = {
+    'TP1':     'oc-sl1',
+    'TARGET':  'oc-tp2',
+    'STOPPED': 'oc-sl',
+    'MANUAL':  'oc-flat',
+    'OPEN':    'oc-open',
+  };
+
+  // Trading day string — must match journal.js tradingDayStr().
+  // Sat/Sun roll back to Friday to match journal filename convention.
+  function todayPerfStr() {
+    var now = new Date();
+    var etHour = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', hour: 'numeric', hour12: false,
+    }).format(now));
+    var ref = new Date(etHour >= 18 ? now.getTime() + 24*60*60*1000 : now.getTime());
+    var etWeekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', weekday: 'short',
+    }).format(ref);
+    if      (etWeekday === 'Sat') ref.setTime(ref.getTime() - 1*24*60*60*1000);
+    else if (etWeekday === 'Sun') ref.setTime(ref.getTime() - 2*24*60*60*1000);
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(ref);
+  }
+
+  function perfNavDay(delta) {
+    var base = perfDate ? new Date(perfDate + 'T12:00:00Z') : new Date(todayPerfStr() + 'T12:00:00Z');
+    base.setUTCDate(base.getUTCDate() + delta);
+    var next = base.toISOString().slice(0, 10);
+    perfDate    = next === todayPerfStr() ? null : next;
+    perfAllTime = false;
+    updatePerfNav();
+    pollPerformance();
+  }
+  function perfNavToday()   { perfDate = null; perfAllTime = false; updatePerfNav(); pollPerformance(); }
+  function perfNavAllTime() { perfAllTime = true;                  updatePerfNav(); pollPerformance(); }
+
+  function updatePerfNav() {
+    var isToday = !perfAllTime && (!perfDate || perfDate === todayPerfStr());
+    var labelEl = document.getElementById('perf-date-label');
+    var nextBtn = document.getElementById('perf-next');
+    if (perfAllTime) {
+      labelEl.textContent = 'ALL TIME';
+      document.getElementById('perf-prev').style.visibility = 'hidden';
+      nextBtn.style.visibility = 'hidden';
+    } else {
+      document.getElementById('perf-prev').style.visibility = '';
+      nextBtn.style.visibility = '';
+      nextBtn.disabled = isToday;
+      labelEl.textContent = isToday ? 'TODAY' : new Date(perfDate + 'T12:00:00Z')
+        .toLocaleDateString('en-US', { timeZone:'UTC', weekday:'short', month:'short', day:'numeric', year:'numeric' });
+    }
+    document.getElementById('perf-today-btn').className   = 'perf-today-btn' + (isToday    ? ' active' : '');
+    document.getElementById('perf-alltime-btn').className = 'perf-today-btn' + (perfAllTime ? ' active' : '');
+    document.getElementById('p-pnl-label').textContent    = perfAllTime ? 'Total P&L' : 'Daily P&L';
+    document.getElementById('p-day-view').style.display   = perfAllTime ? 'none' : '';
+    document.getElementById('p-all-view').style.display   = perfAllTime ? ''     : 'none';
+  }
+
+  // Populate per-account filter from journal-seen account IDs + current setting.
+  function loadPerfAccounts() {
+    fetch('/api/journal/all').then(function(r) { return r.json(); }).then(function(agg) {
+      var accounts = new Set();
+      (agg.byDay || []).forEach(function(d) { /* accountIds are per-trade, not per-day; fetch via distinct */ });
+      // Fallback: pull distinct accounts by reading current settings accountId.
+      fetch('/api/settings').then(function(r) { return r.json(); }).then(function(s) {
+        if (s && s.accountId) accounts.add(String(s.accountId));
+        var navEl = document.getElementById('perf-acct-nav');
+        // Single account → hide filter bar entirely.
+        if (accounts.size <= 1) { navEl.style.display = 'none'; return; }
+        navEl.style.display = 'flex';
+        var buttons = ['<button class="perf-acct-btn' + (!perfAccount ? ' active' : '') + '" data-acct="">ALL</button>'];
+        [].concat(Array.from(accounts)).sort().forEach(function(a) {
+          buttons.push('<button class="perf-acct-btn' + (perfAccount === a ? ' active' : '') +
+                       '" data-acct="' + a + '">' + a + '</button>');
+        });
+        navEl.innerHTML = buttons.join('');
+        navEl.querySelectorAll('.perf-acct-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            perfAccount = btn.dataset.acct || null;
+            navEl.querySelectorAll('.perf-acct-btn').forEach(function(b) {
+              b.classList.toggle('active', (b.dataset.acct || null) === perfAccount);
+            });
+            pollPerformance();
+          });
+        });
+      }).catch(function() {});
     }).catch(function() {});
+  }
 
-    fetch('/api/trades').then(function(r) { return r.json(); }).then(function(trades) {
+  function renderDayRow(t) {
+    var time = t.openedAt ? new Date(t.openedAt).toLocaleTimeString('en-US', {
+      timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false,
+    }) : '—';
+    var sideColor = t.side === 'LONG' ? 'var(--green)' : 'var(--red)';
+    var gross     = t.pnl || 0;
+    var comm      = t.commission || 0;
+    var net       = gross - comm;
+    var dolPerPt  = (t.tickValue && t.tickSize) ? (t.tickValue / t.tickSize) : null;
+    var pts       = (dolPerPt && t.size) ? (gross / dolPerPt / t.size).toFixed(2) : '—';
+    var commStr   = comm > 0 ? '-$' + comm.toFixed(2) : '—';
+    var pnlStr    = (net >= 0 ? '+' : '') + '$' + Math.abs(net).toFixed(2);
+    var pnlColor  = net > 0.01 ? 'var(--green)' : net < -0.01 ? 'var(--red)' : 'var(--muted)';
+    var ocClass   = OUTCOME_CLASS[t.outcome] || '';
+    return '<tr>' +
+      '<td>' + time + '</td>' +
+      '<td>' + (t.symbol || '—') + '</td>' +
+      '<td style="color:' + sideColor + '">' + (t.side || '—') + '</td>' +
+      '<td>' + (t.size || '—') + '</td>' +
+      '<td>' + (t.entryPrice != null ? t.entryPrice : '—') + '</td>' +
+      '<td style="color:var(--green)">' + (t.tp1Price != null ? t.tp1Price : '—') + '</td>' +
+      '<td style="color:var(--green)">' + (t.tp2Price != null ? t.tp2Price : '—') + '</td>' +
+      '<td style="color:var(--red)">'   + (t.slPrice  != null ? t.slPrice  : '—') + '</td>' +
+      '<td>' + (t.rDist        != null ? t.rDist : '—') + '</td>' +
+      '<td>' + (t.compression  != null ? t.compression + '%' : '—') + '</td>' +
+      '<td>' + (t.entryHour    != null ? t.entryHour : '—') + '</td>' +
+      '<td>' + (t.macroTransition || '—') + '</td>' +
+      '<td>' + pts + '</td>' +
+      '<td style="color:var(--muted)">' + commStr + '</td>' +
+      '<td style="color:' + pnlColor + '">' + pnlStr + '</td>' +
+      '<td><span class="' + ocClass + '">' + t.outcome + '</span></td>' +
+      '</tr>';
+  }
+
+  function drillDay(date) {
+    perfDate    = date === todayPerfStr() ? null : date;
+    perfAllTime = false;
+    updatePerfNav();
+    pollPerformance();
+  }
+
+  function renderAllTimeTable(byDay) {
+    var tbody = document.getElementById('p-day-tbody');
+    if (!byDay || !byDay.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="perf-no-data">No journaled trades yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = byDay.slice().reverse().map(function(d) {
+      var pnl = d.pnl || 0;
+      var pnlStr = (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toFixed(2);
+      var pnlColor = pnl > 0.01 ? 'var(--green)' : pnl < -0.01 ? 'var(--red)' : 'var(--muted)';
+      return '<tr style="cursor:pointer" onclick="drillDay(\'' + d.date + '\')" title="View trades for ' + d.date + '">' +
+        '<td>' + d.date + '</td>' +
+        '<td>' + d.total + '</td>' +
+        '<td style="color:var(--green)">' + d.wins   + '</td>' +
+        '<td style="color:var(--red)">'   + d.losses + '</td>' +
+        '<td style="color:var(--yellow)">' + d.be + '</td>' +
+        '<td>' + d.winRate + '%</td>' +
+        '<td style="color:' + pnlColor + '">' + pnlStr + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  function applyStatsToCards(s, noData) {
+    document.getElementById('p-total').textContent   = noData ? '—' : s.total;
+    document.getElementById('p-wins').textContent    = noData ? '—' : s.wins;
+    document.getElementById('p-losses').textContent  = noData ? '—' : s.losses;
+    document.getElementById('p-be').textContent      = noData ? '—' : s.be;
+    document.getElementById('p-winrate').textContent = noData ? '—' : s.winRate + '%';
+    var pnlEl = document.getElementById('p-pnl');
+    var pnl = s.totalPnl || 0;
+    pnlEl.textContent  = noData ? '—' : (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toFixed(2);
+    pnlEl.style.color  = pnl > 0 ? 'var(--green)' : pnl < 0 ? 'var(--red)' : 'var(--muted)';
+  }
+
+  function pollPerformance() {
+    refreshAudit();
+    if (perfAllTime) {
+      var url = '/api/journal/all' + (perfAccount ? '?accountId=' + perfAccount : '');
+      fetch(url).then(function(r) { return r.json(); }).then(function(s) {
+        applyStatsToCards(s, !s.total);
+        renderAllTimeTable(s.byDay || []);
+      }).catch(function() {});
+      return;
+    }
+    var qs = [];
+    if (perfDate)    qs.push('date='      + perfDate);
+    if (perfAccount) qs.push('accountId=' + perfAccount);
+    var url = '/api/journal' + (qs.length ? '?' + qs.join('&') : '');
+    fetch(url).then(function(r) { return r.json(); }).then(function(s) {
+      var noData = (s.total === 0 && !s.open);
+      applyStatsToCards(s, noData);
       var tbody = document.getElementById('p-tbody');
-      if (!trades.length) {
-        tbody.innerHTML = '<tr><td colspan="19" class="perf-no-data">No trades yet</td></tr>';
-        return;
+      if (noData) {
+        tbody.innerHTML = '<tr><td colspan="16" class="perf-no-data">No trades on this day</td></tr>';
+      } else {
+        var rows = (s.trades || []).slice().reverse();
+        tbody.innerHTML = rows.map(renderDayRow).join('');
       }
-      tbody.innerHTML = trades.slice().reverse().map(function(t) {
-        var dir = String(t.direction).toLowerCase();
-        var dirColor = dir === 'bullish' ? 'var(--green)' : 'var(--red)';
-        var statusColor = (t.status === 'TP1' || t.status === 'TARGET') ? 'var(--green)' :
-                          t.status === 'STOPPED' ? 'var(--red)' :
-                          t.status === 'OPEN' ? 'var(--accent)' : 'var(--yellow)';
-        var pnlPts = t.pnlPoints  != null ? t.pnlPoints.toFixed(2)  : '---';
-        var pnlUsd = t.pnlDollars != null ? (t.pnlDollars >= 0 ? '+$' : '-$') + Math.abs(t.pnlDollars).toFixed(2) : '---';
-        var pnlColor = t.pnlDollars > 0 ? 'var(--green)' : t.pnlDollars < 0 ? 'var(--red)' : 'var(--muted)';
-        var rMult = t.rMultiple != null ? t.rMultiple.toFixed(2) + 'R' : '---';
-        var time  = t.timestamp ? t.timestamp.slice(11, 19) : '---';
-        var actionHtml = '';
-        if (t.status === 'OPEN') {
-          actionHtml = '<div class="manual-outcome">' +
-            '<select id="mo-status-' + t.id + '">' +
-              '<option value="TP1">TP1</option><option value="TARGET">TARGET</option>' +
-              '<option value="STOPPED">STOPPED</option><option value="MANUAL">MANUAL</option>' +
-            '</select>' +
-            '<input type="number" id="mo-exit-' + t.id + '" placeholder="Exit" step="0.01" style="width:70px">' +
-            '<button onclick="resolveManual(' + t.id + ')">OK</button></div>';
-        }
-        return '<tr>' +
-          '<td>' + t.id + '</td>' +
-          '<td>' + time + '</td>' +
-          '<td>' + t.instrument + '</td>' +
-          '<td style="color:' + dirColor + '">' + (dir === 'bullish' ? 'BUY' : 'SELL') + '</td>' +
-          '<td>' + (t.qty || '---') + '</td>' +
-          '<td>' + t.entryPrice + '</td>' +
-          '<td style="color:var(--red)">' + t.stop + '</td>' +
-          '<td style="color:var(--green)">' + t.tp1 + '</td>' +
-          '<td style="color:var(--green)">' + t.target + '</td>' +
-          '<td>' + (t.rDist || '---') + '</td>' +
-          '<td>' + (t.compression != null ? t.compression + '%' : '---') + '</td>' +
-          '<td>' + (t.entryHour   != null ? t.entryHour   : '---') + '</td>' +
-          '<td>' + (t.macroTransition || '---') + '</td>' +
-          '<td style="color:' + statusColor + '">' + t.status + '</td>' +
-          '<td>' + (t.exitPrice != null ? t.exitPrice : '---') + '</td>' +
-          '<td>' + rMult + '</td>' +
-          '<td>' + pnlPts + '</td>' +
-          '<td style="color:' + pnlColor + '">' + pnlUsd + '</td>' +
-          '<td>' + actionHtml + '</td>' +
-          '</tr>';
-      }).join('');
     }).catch(function() {});
   }
 
@@ -1130,6 +1392,112 @@
       body: JSON.stringify({ status: status, exitPrice: exitPrice || null }),
     }).then(function() { pollPerformance(); pollStatus(); });
   }
+
+  // ── P&L Audit panel ───────────────────────────────────────────────────────
+  function refreshAudit() {
+    fetch('/api/audit/queue').then(function(r) { return r.json(); }).then(function(a) {
+      var banner = document.getElementById('halt-banner');
+      var haltDetail = document.getElementById('halt-detail');
+      var metaEl = document.getElementById('audit-meta');
+      var reBtn  = document.getElementById('audit-reenable-btn');
+
+      banner.classList.toggle('active', !!a.halted);
+      if (a.halted) {
+        haltDetail.textContent = 'cumulative Δ = $' + Number(a.cumulativeDelta || 0).toFixed(2) +
+          ' · trip threshold $' + Number(a.haltThreshold || 0).toFixed(2) +
+          ' · tripped ' + (a.haltedAt ? new Date(a.haltedAt).toLocaleString() : '—');
+      }
+      reBtn.disabled = !a.halted;
+
+      metaEl.textContent = 'flag $' + Number(a.flagThreshold || 0).toFixed(2) +
+        ' · halt $' + Number(a.haltThreshold || 0).toFixed(2) +
+        ' · cumulative Δ $' + Number(a.cumulativeDelta || 0).toFixed(2) +
+        ' · queue ' + (a.queue ? a.queue.length : 0);
+
+      var tbody = document.getElementById('audit-tbody');
+      var queue = (a.queue || []).slice().reverse();
+      if (!queue.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="perf-no-data">Queue empty</td></tr>';
+        return;
+      }
+      tbody.innerHTML = queue.map(function(q) {
+        var logged = q.loggedAt ? new Date(q.loggedAt).toLocaleString() : '—';
+        var deltaNum = q.delta != null ? Number(q.delta) : null;
+        var deltaStr = deltaNum != null ? (deltaNum >= 0 ? '+$' : '-$') + Math.abs(deltaNum).toFixed(2) : '—';
+        var deltaColor = deltaNum == null ? 'var(--muted)' : (deltaNum > 0 ? 'var(--green)' : deltaNum < 0 ? 'var(--red)' : 'var(--muted)');
+        var execStr   = q.executor_netPnl != null ? '$' + Number(q.executor_netPnl).toFixed(2) : '—';
+        var brokerStr = q.broker_netPnl   != null ? '$' + Number(q.broker_netPnl).toFixed(2)   : '—';
+        return '<tr>' +
+          '<td>' + logged + '</td>' +
+          '<td>' + (q._source || '—') + '</td>' +
+          '<td>' + (q.orderId  || '—') + '</td>' +
+          '<td>' + (q.symbol   || '—') + '</td>' +
+          '<td>' + (q.side     || '—') + '</td>' +
+          '<td>' + execStr + '</td>' +
+          '<td>' + brokerStr + '</td>' +
+          '<td style="color:' + deltaColor + '">' + deltaStr + '</td>' +
+          '<td>' + (q.note || q.reason || q.outcome || '—') + '</td>' +
+          '</tr>';
+      }).join('');
+    }).catch(function() {});
+  }
+
+  function addManualFlag() {
+    var note    = document.getElementById('audit-note').value.trim();
+    var orderId = document.getElementById('audit-orderid').value.trim();
+    var delta   = document.getElementById('audit-delta').value.trim();
+    var symbol  = document.getElementById('audit-symbol').value.trim();
+    if (!note && !orderId && !delta && !symbol) {
+      document.getElementById('audit-msg').textContent = 'Nothing to log';
+      return;
+    }
+    var body = {};
+    if (note)    body.note    = note;
+    if (orderId) body.orderId = orderId;
+    if (delta)   body.delta   = delta;
+    if (symbol)  body.symbol  = symbol;
+    fetch('/api/audit/manual-flag', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(function(r) { return r.json(); }).then(function() {
+      document.getElementById('audit-note').value = '';
+      document.getElementById('audit-orderid').value = '';
+      document.getElementById('audit-delta').value = '';
+      document.getElementById('audit-symbol').value = '';
+      document.getElementById('audit-msg').textContent = 'Flagged';
+      refreshAudit();
+      setTimeout(function() { document.getElementById('audit-msg').textContent = ''; }, 2500);
+    }).catch(function(e) {
+      document.getElementById('audit-msg').textContent = 'Flag failed';
+    });
+  }
+
+  function markReviewed() {
+    if (!confirm('Archive audit queue + clear halt if active?')) return;
+    fetch('/api/audit/mark-reviewed', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        document.getElementById('audit-msg').textContent =
+          'Archived' + (res.clearedHalt ? ' · halt cleared' : '');
+        refreshAudit();
+        setTimeout(function() { document.getElementById('audit-msg').textContent = ''; }, 3000);
+      })
+      .catch(function() {
+        document.getElementById('audit-msg').textContent = 'Mark-reviewed failed';
+      });
+  }
+
+  function reEnableAudit() {
+    if (!confirm('Clear halt flag (re-enable trading) without archiving the queue?')) return;
+    fetch('/api/audit/re-enable', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function() { refreshAudit(); })
+      .catch(function() {
+        document.getElementById('audit-msg').textContent = 'Re-enable failed';
+      });
+  }
+
+  loadPerfAccounts();
 </script>
 </body>
 </html>

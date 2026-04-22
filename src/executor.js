@@ -23,6 +23,7 @@ const px        = require('./projectx');
 const monitor   = require('./monitor');
 const settings  = require('./settings');
 const contracts = require('./contracts');
+const journal   = require('./journal');
 const { LOG_DIR } = require('./paths');
 
 const CACHE_FILE = path.join(LOG_DIR, 'active-trades.json');
@@ -232,6 +233,19 @@ async function settleTrade(contractId, outcome, source) {
         commission,
         rMultiple,
     });
+
+    // Mirror to journal: accumulate gross P&L, then finalize with commission.
+    // reconcileSession compares journal.pnl - journal.commission against the
+    // broker's profitAndLoss - fees per orderId, so both fields must be
+    // populated for the 16:30 ET audit to match correctly.
+    try {
+        const grossDollars = round2(totalDollars);
+        journal.addTradePnl(st.tradeId, grossDollars);
+        journal.finalizeTrade(st.tradeId, outcome, commission);
+        if (st.actualEntryPrice != null) journal.setActualEntry(st.tradeId, st.actualEntryPrice);
+    } catch (jerr) {
+        console.warn(`[executor] journal mirror failed: ${jerr.message}`);
+    }
 
     // Daily P&L + streak bookkeeping (MANUAL skips streak per risk.js)
     risk.addPnl(netDollars);
