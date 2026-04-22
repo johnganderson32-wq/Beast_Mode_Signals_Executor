@@ -60,6 +60,7 @@ function loadSavedToken() {
     try {
         if (!fs.existsSync(TOKEN_FILE)) return null;
         const { token: tok, savedAt } = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
+        if (!tok) return null;
         if (Date.now() - savedAt < TOKEN_MAX_MS) return { tok, savedAt };
     } catch {}
     return null;
@@ -92,6 +93,11 @@ async function authenticate({ force = false } = {}) {
         userName: process.env.PROJECTX_USERNAME,
         apiKey:   process.env.PROJECTX_API_KEY,
     });
+    if (data?.success === false || !data?.token) {
+        token        = null;
+        tokenSavedAt = 0;
+        throw new Error(`Auth failed: ${JSON.stringify(data)}`);
+    }
     token        = data.token;
     tokenSavedAt = Date.now();
     saveToken(token);
