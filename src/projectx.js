@@ -184,8 +184,8 @@ function sidesForDirection(direction) {
 async function placeOrder({ family, direction, stop, tp1, target, qty }) {
     await ensureAuth();
 
-    const accountId = parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
-    if (!accountId) throw new Error('PROJECTX_ACCOUNT_ID not set');
+    const accountId = parseInt(settings.get('accountId'), 10) || null;
+    if (!accountId) throw new Error('No accountId selected — open dashboard Settings and save an account before placing trades');
 
     const contractId = getContractIdForFamily(family);
     const { entrySide, exitSide } = sidesForDirection(direction);
@@ -262,13 +262,13 @@ async function placeOrder({ family, direction, stop, tp1, target, qty }) {
 // POSITIONS & ORDERS
 // ---------------------------------------------------------------------------
 async function getOpenPositions(acctId) {
-    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
     const data = await post('/Position/searchOpen', { accountId }, 'POS');
     return data?.positions || [];
 }
 
 async function getOpenOrders(acctId) {
-    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
     const data = await post('/Order/searchOpen', { accountId }, 'ORD');
     return data?.orders || [];
 }
@@ -279,13 +279,13 @@ async function getOpenOrders(acctId) {
 // when TP1 fills, so the SL can't over-fill and create a reverse position.
 async function modifyOrder(orderId, fields, acctId) {
     if (orderId == null) throw new Error('modifyOrder: orderId required');
-    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
     return post('/Order/modify', { accountId, orderId, ...fields }, `MODIFY:${orderId}`);
 }
 
 async function cancelOrder(orderId, acctId) {
     if (orderId == null) return;
-    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
     try {
         const { data } = await http.post('/Order/cancel', { accountId, orderId });
         if (data?.success === false && data.errorCode !== 5) {
@@ -308,7 +308,7 @@ async function cancelAllOrdersFor(contractId, acctId) {
 // Look up a filled order's fill price. Tries historical / closed / search endpoints.
 async function getFilledOrder(orderId, acctId) {
     if (orderId == null) return null;
-    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
     const id        = Number(orderId);
     const endpoints = [
         ['/Order/searchHistorical', { accountId, orderId: id }],
@@ -332,7 +332,7 @@ async function getFilledOrder(orderId, acctId) {
 // Returns { closed: boolean, closeOrderId: number|null, contractId }
 async function flattenPosition(contractId, acctId) {
     await ensureAuth();
-    const accountId = acctId || parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+    const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
 
     let closeOrderId = null;
     try {

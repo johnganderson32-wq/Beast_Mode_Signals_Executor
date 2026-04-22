@@ -20,7 +20,14 @@ const SCHEMA_VERSION = 1;
 const SETTINGS_FILE  = path.join(LOG_DIR, 'settings.json');
 
 const store = {
-    accountId:            process.env.PROJECTX_ACCOUNT_ID || '',
+    // accountId is INTENTIONALLY not seeded from process.env.PROJECTX_ACCOUNT_ID.
+    // Authoritative source is logs/settings.json (persisted dashboard selection).
+    // If the file is missing or the user hasn't clicked Save, accountId stays
+    // empty and every incoming signal rejects with no_account_id until the UI
+    // writes a value. Rationale (2026-04-22): .env was being used as an ambient
+    // fallback, routing trades into whichever account happened to be in .env
+    // rather than the account the user had selected in the UI.
+    accountId:            '',
 
     // Contract IDs — one per family
     nqContractId:         process.env.NQ_CONTRACT_ID      || '',

@@ -119,7 +119,7 @@ function buildState(t) {
         tickSize:              spec.tickSize,
         pointValue:            spec.pointValue,
         commissionPerContract: contracts.getCommissionPerContract(t.contractId),
-        accountId:  parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10),
+        accountId:  parseInt(settings.get('accountId'), 10) || null,
         armedAt:    Date.now(),
     };
 }

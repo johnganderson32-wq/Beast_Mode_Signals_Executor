@@ -113,10 +113,7 @@ function msUntilNextCloseET(hhmm, now = new Date()) {
 // FLATTEN — the actual fire
 // ---------------------------------------------------------------------------
 async function flattenAllOpenPositions(reason = DISPOSITION) {
-    const accountId = parseInt(
-        require('./settings').get('accountId') || process.env.PROJECTX_ACCOUNT_ID,
-        10,
-    );
+    const accountId = parseInt(require('./settings').get('accountId'), 10) || null;
     if (!accountId) {
         console.error('[session-close] no accountId configured — skipping flatten');
         writeAudit({ event: 'skip', reason: 'no_account_id' });
@@ -264,7 +261,7 @@ async function runPnlAuditReconcile() {
     const accountIds = [];
     const seen = new Set();
 
-    const liveAid = settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID;
+    const liveAid = settings.get('accountId') || null;
     if (liveAid != null && String(liveAid).trim() !== '' && !seen.has(String(liveAid))) {
         seen.add(String(liveAid));
         accountIds.push(liveAid);

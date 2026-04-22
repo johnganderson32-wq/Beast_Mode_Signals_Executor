@@ -19,7 +19,9 @@ const path = require('path');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'beast-sc-test-'));
 process.env.BEAST_LOG_DIR = TMP;
-process.env.PROJECTX_ACCOUNT_ID = '99999';   // non-zero so the scheduler will attempt a run
+// Note: .env PROJECTX_ACCOUNT_ID is intentionally NOT read by the executor
+// any more (2026-04-22 account-routing fix). We seed accountId via
+// settings.merge below, which is the authoritative source.
 
 // Sanity: confirm paths.js resolves to the temp dir before any other module loads.
 const { LOG_DIR } = require('../src/paths');
@@ -29,6 +31,9 @@ if (LOG_DIR !== path.resolve(TMP)) {
 }
 
 const settings     = require('../src/settings');
+// Seed a non-zero accountId via the authoritative (dashboard-selection) path
+// so the scheduler will attempt a flatten in TEST 1.
+settings.merge({ accountId: 99999 });
 const sessionClose = require('../src/sessionClose');
 const risk         = require('../src/risk');
 const px           = require('../src/projectx');

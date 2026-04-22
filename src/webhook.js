@@ -220,7 +220,7 @@ function createWebhookRouter() {
             // a failure here does NOT block the live trade.
             try {
                 const spec = contracts.getSpec(trade.contractId);
-                const acctId = parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+                const acctId = parseInt(settings.get('accountId'), 10) || null;
                 journal.openTrade(updated || trade, {
                     accountId: acctId,
                     tickSize:  spec?.tickSize,

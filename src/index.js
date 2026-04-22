@@ -66,7 +66,10 @@ app.listen(PORT, async () => {
     // the poll fallback still reconciles fills by REST alone.
     try {
         const tok = px.getToken();
-        const acctId = parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+        const acctId = parseInt(settings.get('accountId'), 10) || null;
+        if (!acctId) {
+            console.warn('[beast-executor] No accountId in logs/settings.json — RTC will not subscribe until user selects an account in the dashboard');
+        }
         await executor.start(tok, acctId);
     } catch (e) {
         console.error(`[executor] start failed: ${e.message} — 5s REST poll still active`);
@@ -107,7 +110,7 @@ app.listen(PORT, async () => {
         if (rtcRestartInFlight) return;
         rtcRestartInFlight = true;
         try {
-            const newAcctId = parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+            const newAcctId = parseInt(settings.get('accountId'), 10) || null;
             console.log(`[beast-executor] accountId changed → restarting RTC on account ${newAcctId}`);
             await executor.stop();
             const tok = px.getToken();
