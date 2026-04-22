@@ -62,4 +62,31 @@ app.listen(PORT, async () => {
     } catch (e) {
         console.error(`[session-close] start failed: ${e.message}`);
     }
+
+    // Account switch from UI → restart RTC so SignalR order/position/trade
+    // subscriptions repoint to the new account. Order placement already reads
+    // settings.get('accountId') fresh, but the hub subscriptions are locked
+    // in at startRtc() and must be torn down + rebuilt.
+    let rtcRestartInFlight = false;
+    settings.onChange(async (keys) => {
+        if (!keys.has('accountId')) return;
+        if (rtcRestartInFlight) return;
+        rtcRestartInFlight = true;
+        try {
+            const newAcctId = parseInt(settings.get('accountId') || process.env.PROJECTX_ACCOUNT_ID, 10);
+            console.log(`[beast-executor] accountId changed → restarting RTC on account ${newAcctId}`);
+            await executor.stop();
+            const tok = px.getToken();
+            if (!tok) {
+                console.warn('[beast-executor] no PX token — RTC restart skipped');
+                return;
+            }
+            await executor.start(tok, newAcctId);
+            console.log(`[beast-executor] RTC re-subscribed to account ${newAcctId}`);
+        } catch (e) {
+            console.error(`[beast-executor] RTC restart failed: ${e.message}`);
+        } finally {
+            rtcRestartInFlight = false;
+        }
+    });
 });
