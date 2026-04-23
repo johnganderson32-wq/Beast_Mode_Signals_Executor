@@ -144,6 +144,44 @@ async function post(urlPath, body, tag) {
 }
 
 // ---------------------------------------------------------------------------
+// CROSS-ROUTE GUARD — defense-in-depth assertion that every order, cancel,
+// modify, or flatten targets the account the user has actively selected in
+// the UI (persisted to logs/settings.json → accountId). Anything else is
+// refused BEFORE the POST to ProjectX — no chance of reaching the broker,
+// no chance of filling.
+//
+// Catches (all hypothetical future regressions):
+//   - env-fallback drift if someone reintroduces Number(process.env.PROJECTX_ACCOUNT_ID)
+//   - stale closure holding an old accountId after a mid-session UI change
+//   - typo / variable-shadowing in a new trade path
+//   - any code that reads account from a settings source we don't know about
+//
+// Does NOT protect against:
+//   - user deliberately selecting a wrong account in the UI
+//   - platform-side copy-trading / master-follower mirroring at TopstepX
+// Those are out of scope — this guards the code path, not the business
+// decision or the broker layer.
+//
+// BEAST deviates from EAI: EAI supports three concurrent strategy accounts
+// (EAI / IBOB / TMAG) so its "selected set" is a 3-element filter. BEAST has
+// exactly one live account — settings.get('accountId') — so the guard is a
+// single-value equality check. Settings is read on every call so mid-session
+// UI changes take effect immediately with no restart.
+// ---------------------------------------------------------------------------
+function verifyAccountIntent(acctId, context = 'unspecified') {
+    const selected = parseInt(settings.get('accountId'), 10) || null;
+    const target = Number(acctId);
+    if (!Number.isFinite(target) || target <= 0) {
+        console.error(`[CROSS-ROUTE-BLOCK] REFUSING ${context}: accountId=${acctId} is not a valid ID. Selected BEAST=${selected}`);
+        throw new Error(`cross_route_guard: invalid accountId ${acctId} (context=${context})`);
+    }
+    if (selected == null || target !== selected) {
+        console.error(`[CROSS-ROUTE-BLOCK] REFUSING ${context}: accountId=${target} is NOT the currently-selected BEAST account ${selected}. Order NOT sent to broker.`);
+        throw new Error(`cross_route_guard: accountId ${target} not currently selected`);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // CONTRACT / QTY HELPERS
 // ---------------------------------------------------------------------------
 // Map product family → contract ID key in settings (mini default; micro
@@ -186,6 +224,7 @@ async function placeOrder({ family, direction, stop, tp1, target, qty }) {
 
     const accountId = parseInt(settings.get('accountId'), 10) || null;
     if (!accountId) throw new Error('No accountId selected — open dashboard Settings and save an account before placing trades');
+    verifyAccountIntent(accountId, `placeOrder ${family} ${direction}`);
 
     const contractId = getContractIdForFamily(family);
     const { entrySide, exitSide } = sidesForDirection(direction);
@@ -280,12 +319,14 @@ async function getOpenOrders(acctId) {
 async function modifyOrder(orderId, fields, acctId) {
     if (orderId == null) throw new Error('modifyOrder: orderId required');
     const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
+    verifyAccountIntent(accountId, `modifyOrder ${orderId}`);
     return post('/Order/modify', { accountId, orderId, ...fields }, `MODIFY:${orderId}`);
 }
 
 async function cancelOrder(orderId, acctId) {
     if (orderId == null) return;
     const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
+    verifyAccountIntent(accountId, `cancelOrder ${orderId}`);
     try {
         const { data } = await http.post('/Order/cancel', { accountId, orderId });
         if (data?.success === false && data.errorCode !== 5) {
@@ -297,10 +338,12 @@ async function cancelOrder(orderId, acctId) {
 }
 
 async function cancelAllOrdersFor(contractId, acctId) {
-    const openOrders = await getOpenOrders(acctId);
+    const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
+    verifyAccountIntent(accountId, `cancelAllOrdersFor ${contractId}`);
+    const openOrders = await getOpenOrders(accountId);
     const rel = openOrders.filter(o => o.contractId === contractId);
     for (const o of rel) {
-        await cancelOrder(o.orderId ?? o.id, acctId);
+        await cancelOrder(o.orderId ?? o.id, accountId);
     }
     if (rel.length) console.log(`[projectx] Cancelled ${rel.length} working orders for ${contractId}`);
 }
@@ -333,6 +376,7 @@ async function getFilledOrder(orderId, acctId) {
 async function flattenPosition(contractId, acctId) {
     await ensureAuth();
     const accountId = acctId || parseInt(settings.get('accountId'), 10) || null;
+    verifyAccountIntent(accountId, `flattenPosition ${contractId}`);
 
     let closeOrderId = null;
     try {
@@ -388,5 +432,6 @@ module.exports = {
     flattenPosition, getFilledOrder, waitForFillPrice,
     getContractIdForFamily, getFixedQty,
     sidesForDirection,
+    verifyAccountIntent,  // exported for inline unit tests + external audit
     getToken: () => token,
 };
