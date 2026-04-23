@@ -89,6 +89,8 @@ async function startRtc(token, accountId, eventHandlers, onPermanentClose) {
     hub.on('gatewayuserposition', evt => dispatch('onPosition', evt));
     hub.on('GatewayUserTrade',    evt => dispatch('onTrade',    evt));
     hub.on('gatewayusertrade',    evt => dispatch('onTrade',    evt));
+    hub.on('GatewayUserAccount',  () => {});
+    hub.on('gatewayuseraccount',  () => {});
 
     const thisHub = hub;
     let startupComplete = false;
