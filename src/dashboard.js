@@ -38,10 +38,23 @@ function createDashboardRouter() {
                 ngrokOk = r.ok;
             } catch {}
         }
+        const subs = monitor.getSubscribedContracts ? monitor.getSubscribedContracts() : [];
+        const quotes = {};
+        if (monitor.getLastQuote) {
+            for (const cid of subs) {
+                const q = monitor.getLastQuote(cid);
+                if (q) quotes[cid] = { last: q.last, bid: q.bid, ask: q.ask, ageMs: Date.now() - q.ts };
+            }
+        }
         res.json({
             projectx: auth,
             ngrok:    { connected: ngrokOk, url: ngrokUrl || null },
             rtc:      { connected: monitor.isConnected() },
+            marketHub:{
+                connected:  monitor.isMarketConnected ? monitor.isMarketConnected() : false,
+                subscribed: subs,
+                quotes,
+            },
         });
     });
 

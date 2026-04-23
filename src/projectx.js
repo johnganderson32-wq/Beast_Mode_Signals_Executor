@@ -219,13 +219,14 @@ function sidesForDirection(direction) {
 // Returns { orderIds: { entry, sl, tp1, target }, qty, contractId }
 // Throws with `stage`, `orderIds`, and `contractId` attached so the caller can
 // run safety flatten when entry filled but a protective order failed.
-async function placeOrder({ family, direction, stop, tp1, target, qty }) {
+async function placeOrder({ family, direction, stop, tp1, target, qty, mode }) {
     await ensureAuth();
 
     const accountId = parseInt(settings.get('accountId'), 10) || null;
     if (!accountId) throw new Error('No accountId selected — open dashboard Settings and save an account before placing trades');
     verifyAccountIntent(accountId, `placeOrder ${family} ${direction}`);
 
+    const isMomentum = String(mode || '').toLowerCase() === 'momentum';
     const contractId = getContractIdForFamily(family);
     const { entrySide, exitSide } = sidesForDirection(direction);
     const ts         = Date.now();
@@ -266,29 +267,36 @@ async function placeOrder({ family, direction, stop, tp1, target, qty }) {
         orderIds.sl = slRes?.orderId ?? slRes?.id ?? null;
         console.log(`[projectx] SL @ ${slPrice} (id=${orderIds.sl})`);
 
-        const tp1Qty = qty === 1 ? 1 : qty - 1;
-        const tp1Res = await post('/Order/place', {
-            accountId, contractId,
-            type:       1,
-            side:       exitSide,
-            size:       tp1Qty,
-            limitPrice: tp1Price,
-            customTag:  `BEAST:TP1:${ts}`,
-        }, 'TP1');
-        orderIds.tp1 = tp1Res?.orderId ?? tp1Res?.id ?? null;
-        console.log(`[projectx] TP1 @ ${tp1Price} (${tp1Qty}ct, id=${orderIds.tp1})`);
-
-        if (qty >= 2) {
-            const tgtRes = await post('/Order/place', {
+        // Momentum mode: no fixed TP orders — the full position exits via the
+        // trailing SL which walks up/down as favorable excursion builds. TP1
+        // and TARGET order slots stay null in the returned orderIds.
+        if (!isMomentum) {
+            const tp1Qty = qty === 1 ? 1 : qty - 1;
+            const tp1Res = await post('/Order/place', {
                 accountId, contractId,
                 type:       1,
                 side:       exitSide,
-                size:       1,
-                limitPrice: tgtPrice,
-                customTag:  `BEAST:TARGET:${ts}`,
-            }, 'TARGET');
-            orderIds.target = tgtRes?.orderId ?? tgtRes?.id ?? null;
-            console.log(`[projectx] Target @ ${tgtPrice} (1ct, id=${orderIds.target})`);
+                size:       tp1Qty,
+                limitPrice: tp1Price,
+                customTag:  `BEAST:TP1:${ts}`,
+            }, 'TP1');
+            orderIds.tp1 = tp1Res?.orderId ?? tp1Res?.id ?? null;
+            console.log(`[projectx] TP1 @ ${tp1Price} (${tp1Qty}ct, id=${orderIds.tp1})`);
+
+            if (qty >= 2) {
+                const tgtRes = await post('/Order/place', {
+                    accountId, contractId,
+                    type:       1,
+                    side:       exitSide,
+                    size:       1,
+                    limitPrice: tgtPrice,
+                    customTag:  `BEAST:TARGET:${ts}`,
+                }, 'TARGET');
+                orderIds.target = tgtRes?.orderId ?? tgtRes?.id ?? null;
+                console.log(`[projectx] Target @ ${tgtPrice} (1ct, id=${orderIds.target})`);
+            }
+        } else {
+            console.log(`[projectx] momentum mode — TP1/TARGET skipped, exit via trailing SL`);
         }
     } catch (e) {
         throw Object.assign(e, { stage: 'protective', orderIds, contractId });

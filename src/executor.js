@@ -85,8 +85,13 @@ function buildState(t) {
     if (!spec) return null;
     const side    = String(t.direction).toLowerCase() === 'bullish' ? 0 : 1;
     const qty     = Number(t.qty) || 1;
-    const tp1Qty  = qty === 1 ? 1 : qty - 1;
-    const tp2Qty  = qty >= 2 ? 1 : 0;
+    const isMomentum = String(t.mode || 'standard').toLowerCase() === 'momentum';
+    // Momentum mode has no TP legs — whole position exits via trailing SL.
+    const tp1Qty  = isMomentum ? 0 : (qty === 1 ? 1 : qty - 1);
+    const tp2Qty  = isMomentum ? 0 : (qty >= 2 ? 1 : 0);
+    const slPrice = Number(t.stop);
+    const entry   = Number(t.entryPrice);
+    const rDist   = t.rDist ? Number(t.rDist) : Math.abs(entry - slPrice);
     return {
         tradeId:      t.id,
         contractId:   t.contractId,
@@ -97,16 +102,16 @@ function buildState(t) {
         size:         qty,
         tp1Qty,
         tp2Qty,
-        entryPrice:       Number(t.entryPrice),
+        entryPrice:       entry,
         actualEntryPrice: null,
-        slPrice:          Number(t.stop),
-        tp1Price:         Number(t.tp1),
-        tp2Price:         Number(t.target),
-        rDist:            t.rDist ? Number(t.rDist) : null,
+        slPrice:          slPrice,
+        tp1Price:         isMomentum ? null : Number(t.tp1),
+        tp2Price:         isMomentum ? null : Number(t.target),
+        rDist,
         entryOrderId: t.orderIds?.entry  ?? null,
         slOrderId:    t.orderIds?.sl     ?? null,
-        tp1OrderId:   t.orderIds?.tp1    ?? null,
-        tp2OrderId:   t.orderIds?.target ?? null,
+        tp1OrderId:   isMomentum ? null : (t.orderIds?.tp1    ?? null),
+        tp2OrderId:   isMomentum ? null : (t.orderIds?.target ?? null),
         tp1FillPrice: null,
         tp2FillPrice: null,
         slFillPrice:  null,
@@ -116,6 +121,14 @@ function buildState(t) {
         slBooked:  false,
         slResizedOnTp1: false,  // race guard: SL already shrunk to runner qty
         settled:   false,
+        // Momentum trail state (only touched when isMomentum)
+        isMomentum,
+        momentumTrailPct: isMomentum ? (Number(settings.get('momentumTrailPct'))      || 0.75) : 0,
+        momentumActivPct: isMomentum ? (Number(settings.get('momentumActivationPct')) || 0.30) : 0,
+        mfe:              0,
+        trailArmed:       false,
+        trailInFlight:    false,
+        trailLastMovedAt: 0,
         tickSize:              spec.tickSize,
         pointValue:            spec.pointValue,
         commissionPerContract: contracts.getCommissionPerContract(t.contractId),
@@ -133,7 +146,16 @@ function registerTrade(tradeRow) {
     }
     activeTrades[st.contractId] = st;
     saveCache();
-    console.log(`[executor] Tracking trade ${st.tradeId} (${st.contractId}) — entry=${st.entryPrice} SL=${st.slPrice} TP1=${st.tp1Price} T=${st.tp2Price} ${st.size}ct`);
+    if (st.isMomentum) {
+        console.log(`[executor] Tracking trade ${st.tradeId} (${st.contractId}) [MOMENTUM] — entry=${st.entryPrice} SL=${st.slPrice} ${st.size}ct trail@${(st.momentumTrailPct*100).toFixed(0)}%MFE act@${(st.momentumActivPct*100).toFixed(0)}%SL`);
+        // Defensive: ensure we're subscribed to this contract's quote feed.
+        // Boot-time subscribeConfiguredQuotes covers the common case, but a
+        // mismatch (e.g. contractId changed in settings mid-session) falls
+        // through to here so the trail never runs silently without quotes.
+        monitor.subscribeContractQuote(st.contractId).catch(() => {});
+    } else {
+        console.log(`[executor] Tracking trade ${st.tradeId} (${st.contractId}) — entry=${st.entryPrice} SL=${st.slPrice} TP1=${st.tp1Price} T=${st.tp2Price} ${st.size}ct`);
+    }
 }
 
 function removeFromCache(contractId) {
@@ -277,6 +299,15 @@ async function settleTrade(contractId, outcome, source) {
 
 // Determine the outcome label given which legs booked.
 function classifyOutcome(st) {
+    // Momentum exits only via trailing SL. Label by fill vs entry so streak +
+    // dashboard stats read correctly: profitable trail = TARGET, loss = STOPPED.
+    if (st.isMomentum) {
+        if (!st.slBooked) return 'MANUAL';
+        const fill  = st.slFillPrice ?? st.slPrice;
+        const entry = st.actualEntryPrice ?? st.entryPrice;
+        const dir   = String(st.direction).toLowerCase() === 'bullish' ? 1 : -1;
+        return ((fill - entry) * dir) > 0 ? 'TARGET' : 'STOPPED';
+    }
     const tp1 = st.tp1Booked, tp2 = st.tp2Booked, sl = st.slBooked;
     if (tp2 && tp1)            return 'TARGET';        // full winner: TP1 + runner to target
     if (tp1 && sl)             return 'TP1';           // partial winner: TP1 then SL on runner
@@ -284,6 +315,90 @@ function classifyOutcome(st) {
     if (sl && !tp1 && !tp2)    return 'STOPPED';
     if (tp2 && !tp1)           return 'TARGET';        // uncommon: target without TP1 (race)
     return 'MANUAL';
+}
+
+// ── Momentum trail ─────────────────────────────────────────────────────────
+// For each live quote on a momentum trade:
+//   1. Update MFE (max favorable excursion from actual entry, in points).
+//   2. Once MFE ≥ activationPct × initial SL distance → arm trail.
+//   3. Propose new SL = entry + dir × (MFE × trailPct). Modify only if the
+//      proposed stop is strictly more protective (closer to current price
+//      in the direction of the trade) than the current SL and differs by
+//      at least one tick. Throttle to one modify per 500ms with in-flight
+//      guard so a fast-moving market can't spam /Order/modify.
+const TRAIL_MIN_INTERVAL_MS = 500;
+
+function roundTickToward(price, tickSize, dir) {
+    // Round toward-favor-of-trader: for a long's SL (below price), round DOWN
+    // so we don't inflate risk; for a short's SL (above price), round UP.
+    if (!tickSize) return price;
+    const ticks = price / tickSize;
+    const rounded = dir > 0 ? Math.floor(ticks) : Math.ceil(ticks);
+    return rounded * tickSize;
+}
+
+async function applyMomentumTrail(st, price) {
+    if (!st || !st.isMomentum || st.settled) return;
+    if (st.trailInFlight) return;
+    if (!st.slOrderId)    return;
+    if (!Number.isFinite(price)) return;
+
+    const entry = st.actualEntryPrice ?? st.entryPrice;
+    if (!Number.isFinite(entry)) return;  // entry fill hasn't been captured yet
+    const dir = String(st.direction).toLowerCase() === 'bullish' ? 1 : -1;
+
+    const favorable = (price - entry) * dir;
+    if (favorable <= 0) return;
+
+    if (favorable > st.mfe) st.mfe = favorable;
+
+    const initialSlDist = Math.abs(entry - Number(st.slPrice));
+    const activationDist = initialSlDist * st.momentumActivPct;
+    if (st.mfe < activationDist) return;
+
+    if (!st.trailArmed) {
+        st.trailArmed = true;
+        console.log(`[TRAIL] ${st.label} armed — MFE=${st.mfe.toFixed(2)}pt ≥ activation=${activationDist.toFixed(2)}pt`);
+    }
+
+    // Proposed SL — protect trailPct of the realized favorable move.
+    const protectedDist = st.mfe * st.momentumTrailPct;
+    const proposed      = roundTickToward(entry + dir * protectedDist, st.tickSize, dir);
+
+    // Must be strictly MORE protective than current SL (closer to price, in favor)
+    const moreProtective = dir > 0 ? (proposed > st.slPrice) : (proposed < st.slPrice);
+    if (!moreProtective) return;
+
+    // Require at least one tick of improvement to avoid sub-tick modify noise
+    if (Math.abs(proposed - st.slPrice) < st.tickSize) return;
+
+    // Throttle — one successful modify per 500ms window
+    if (Date.now() - st.trailLastMovedAt < TRAIL_MIN_INTERVAL_MS) return;
+
+    st.trailInFlight = true;
+    try {
+        await px.modifyOrder(st.slOrderId, { stopPrice: proposed, size: st.size }, st.accountId);
+        st.slPrice = proposed;
+        st.trailLastMovedAt = Date.now();
+        db.update(st.tradeId, { stop: proposed });
+        saveCache();
+        console.log(`[TRAIL] ${st.label} SL → ${proposed} (MFE=${st.mfe.toFixed(2)}pt, protect=${(st.momentumTrailPct*100).toFixed(0)}%)`);
+    } catch (e) {
+        // Modify failures log but leave SL at current price — next tick retries
+        console.warn(`[TRAIL] ${st.label} modifyOrder failed: ${e.message}`);
+    } finally {
+        st.trailInFlight = false;
+    }
+}
+
+async function handleQuote(d) {
+    const { contractId } = d;
+    if (!contractId) return;
+    const st = activeTrades[contractId];
+    if (!st || !st.isMomentum || st.settled) return;
+    const price = Number(d.lastPrice ?? d.last ?? d.bestBid ?? d.bestAsk);
+    if (!Number.isFinite(price)) return;
+    await applyMomentumTrail(st, price);
 }
 
 // ── RTC event handlers ──────────────────────────────────────────────────────
@@ -502,6 +617,22 @@ function stopPoll() {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
+// ── Market-hub quote subscriptions ─────────────────────────────────────────
+// Subscribe to the configured per-family contracts on boot. The market hub
+// runs idle in standard mode (no consumer); momentum mode will attach a
+// trail-logic onQuote handler in a later phase.
+function configuredContractIds() {
+    const keys = ['nqContractId', 'gcContractId', 'esContractId'];
+    const ids  = keys.map(k => settings.get(k)).filter(Boolean);
+    return Array.from(new Set(ids));
+}
+
+async function subscribeConfiguredQuotes() {
+    for (const cid of configuredContractIds()) {
+        try { await monitor.subscribeContractQuote(cid); } catch {}
+    }
+}
+
 // ── Boot ───────────────────────────────────────────────────────────────────
 async function start(token, accountId) {
     loadCache();
@@ -516,6 +647,7 @@ async function start(token, accountId) {
         onOrder:    handleOrderUpdate,
         onPosition: handlePositionUpdate,
         onTrade:    handleTradeUpdate,
+        onQuote:    handleQuote,
     };
     const onPermClose = async () => {
         try {
@@ -543,6 +675,8 @@ async function start(token, accountId) {
             throw retryErr;
         }
     }
+
+    await subscribeConfiguredQuotes();
 }
 
 async function stop() {

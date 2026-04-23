@@ -93,6 +93,7 @@ function insert(trade) {
         entryHour:       trade.entryHour,
         macroTransition: trade.macroTransition,
         h4ZoneId:        trade.h4ZoneId,
+        mode:            trade.mode || 'standard',   // 'standard' | 'momentum' — frozen at registration
         status:          'OPEN',    // OPEN | TP1 | TARGET | STOPPED | MANUAL
         exitPrice:       null,
         exitTime:        null,

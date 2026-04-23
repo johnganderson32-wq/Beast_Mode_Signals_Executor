@@ -57,8 +57,12 @@ const store = {
     // Dynamic sizing — when ON, qty = floor(perTradeLossCap / (rDist × $/pt))
     dynamicSizing:        process.env.DYNAMIC_SIZING_ENABLED === 'true',
 
-    // Placeholder for future momentum trail build — metadata only until monitor.js port
+    // ATM strategy: 'standard' = fixed TP1 + runner to target.
+    //               'momentum' = no fixed TPs; SL trails at trailPct of MFE once
+    //                            MFE reaches activationPct of initial SL distance.
     atmStrategy:          (process.env.ATM_STRATEGY || 'standard').toLowerCase(),
+    momentumTrailPct:      parseFloat(process.env.MOMENTUM_TRAIL_PCT      || '0.75'),
+    momentumActivationPct: parseFloat(process.env.MOMENTUM_ACTIVATION_PCT || '0.30'),
 };
 
 function persist() {

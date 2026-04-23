@@ -194,10 +194,15 @@ function createWebhookRouter() {
             return res.status(200).json({ status: 'blocked', reason: qtyReason });
         }
 
+        // Freeze the ATM strategy at registration — a mid-trade flip of the
+        // dashboard toggle must not change an in-flight trade's exit logic.
+        const mode = String(settings.get('atmStrategy') || 'standard').toLowerCase() === 'momentum'
+            ? 'momentum' : 'standard';
+
         // ── Record trade before placing order ───────────────────────────────
         const trade = db.insert({
             instrument, direction, entryPrice, stop, tp1, target,
-            family, contractId, qty,
+            family, contractId, qty, mode,
             rDist:           rDist           ?? null,
             compression:     compression     ?? null,
             entryHour:       entryHour       ?? null,
@@ -211,7 +216,7 @@ function createWebhookRouter() {
         let orderStage    = null;
         let safetyFlatten = null;
         try {
-            orderResult = await px.placeOrder({ family, direction, stop, tp1, target, qty });
+            orderResult = await px.placeOrder({ family, direction, stop, tp1, target, qty, mode });
             const updated = db.update(trade.id, { orderIds: orderResult.orderIds });
             logStream.addLine(`[ENTRY] BEAST ${direction.toUpperCase()} ${instrument} ${qty}ct entry=${entryPrice} SL=${stop} TP1=${tp1} T=${target}`);
             risk.incrementSignals(true);
