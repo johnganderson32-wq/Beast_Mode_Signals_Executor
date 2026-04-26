@@ -664,8 +664,9 @@
           <label>ATM Strategy</label>
           <select id="s-atm-strategy">
             <option value="standard">Standard — TP1 partial → TP2 runner</option>
-            <option value="momentum">Momentum — Trail @ 75% MFE, no fixed TP</option>
+            <option value="momentum">Momentum — Trailing SL, no fixed TP</option>
           </select>
+          <div class="field-hint">v4 alerts override momentum activation/trail per signal; env defaults apply when payload field is null</div>
         </div>
 
         <button type="submit" class="btn-save">SAVE SETTINGS</button>

@@ -102,6 +102,14 @@ function openTrade(trade, { accountId, tickSize, tickValue, orderIds } = {}) {
         entryHour:       trade.entryHour       ?? null,
         macroTransition: trade.macroTransition ?? null,
         h4ZoneId:        trade.h4ZoneId        ?? null,
+        // v4 fields — null on v3 payloads
+        momentumActivation: trade.momentumActivation ?? null,
+        momentumTrail:      trade.momentumTrail      ?? null,
+        sizeMultiplier:     trade.sizeMultiplier     ?? null,
+        cellId:             trade.cellId             ?? null,
+        smtMacroCount:      trade.smtMacroCount      ?? null,
+        overshootPts:       trade.overshootPts       ?? null,
+        entryZoneSide:      trade.entryZoneSide      ?? null,
         // Order IDs flattened from trade.orderIds so pnlReconcile can match
         // broker /Trade/search rows against the executor's orders.
         entryOrderId: orderIds?.entry  ?? trade.orderIds?.entry  ?? null,
@@ -385,6 +393,14 @@ function backfillFromDb(dbTrades) {
                 entryHour:       t.entryHour       ?? null,
                 macroTransition: t.macroTransition ?? null,
                 h4ZoneId:        t.h4ZoneId        ?? null,
+                // v4 fields — null on v3 payloads
+                momentumActivation: t.momentumActivation ?? null,
+                momentumTrail:      t.momentumTrail      ?? null,
+                sizeMultiplier:     t.sizeMultiplier     ?? null,
+                cellId:             t.cellId             ?? null,
+                smtMacroCount:      t.smtMacroCount      ?? null,
+                overshootPts:       t.overshootPts       ?? null,
+                entryZoneSide:      t.entryZoneSide      ?? null,
                 entryOrderId: t.orderIds?.entry  ?? null,
                 slOrderId:    t.orderIds?.sl     ?? null,
                 tp1OrderId:   t.orderIds?.tp1    ?? null,

@@ -93,6 +93,14 @@ function insert(trade) {
         entryHour:       trade.entryHour,
         macroTransition: trade.macroTransition,
         h4ZoneId:        trade.h4ZoneId,
+        // v4 fields — frozen at registration; null on v3 payloads
+        momentumActivation: trade.momentumActivation ?? null,
+        momentumTrail:      trade.momentumTrail      ?? null,
+        sizeMultiplier:     trade.sizeMultiplier     ?? null,
+        cellId:             trade.cellId             ?? null,
+        smtMacroCount:      trade.smtMacroCount      ?? null,
+        overshootPts:       trade.overshootPts       ?? null,
+        entryZoneSide:      trade.entryZoneSide      ?? null,
         mode:            trade.mode || 'standard',   // 'standard' | 'momentum' — frozen at registration
         status:          'OPEN',    // OPEN | TP1 | TARGET | STOPPED | MANUAL
         exitPrice:       null,

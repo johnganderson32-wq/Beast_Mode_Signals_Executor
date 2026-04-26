@@ -122,9 +122,16 @@ function buildState(t) {
         slResizedOnTp1: false,  // race guard: SL already shrunk to runner qty
         settled:   false,
         // Momentum trail state (only touched when isMomentum)
+        // v4 payload values are resolved + frozen on the trade row at webhook
+        // intake. Fall back to settings here for legacy trades restored from
+        // disk pre-v4 (rows missing momentumActivation / momentumTrail).
         isMomentum,
-        momentumTrailPct: isMomentum ? (Number(settings.get('momentumTrailPct'))      || 0.75) : 0,
-        momentumActivPct: isMomentum ? (Number(settings.get('momentumActivationPct')) || 0.30) : 0,
+        momentumTrailPct: isMomentum
+            ? (Number(t.momentumTrail)      || Number(settings.get('momentumTrailPct'))      || 0.75)
+            : 0,
+        momentumActivPct: isMomentum
+            ? (Number(t.momentumActivation) || Number(settings.get('momentumActivationPct')) || 0.30)
+            : 0,
         mfe:              0,
         trailArmed:       false,
         trailInFlight:    false,

@@ -127,6 +127,9 @@ function createWebhookRouter() {
             instrument, direction, price: entryPrice,
             stop, tp1, target, rDist, compression,
             entryHour, macroTransition, h4ZoneId,
+            // v4 fields (null on v3 payloads — `?? null` everywhere downstream)
+            momentum_activation, momentum_trail, size_multiplier,
+            cell_id, smt_macro_count, overshoot_pts, entry_zone_side,
         } = payload;
 
         const family = contracts.normalizeInstrument(instrument);
@@ -186,18 +189,41 @@ function createWebhookRouter() {
             return res.status(200).json({ status: 'blocked', reason: 'no_contract_id' });
         }
         const slPoints       = Math.abs(Number(entryPrice) - Number(stop));
-        const { qty, reason: qtyReason } = computeQty({ contractId, slPoints });
-        if (qty < 1) {
+        const { qty: baseQty, reason: qtyReason } = computeQty({ contractId, slPoints });
+        if (baseQty < 1) {
             console.warn(`[webhook] BLOCKED — ${qtyReason}`);
             risk.incrementSignals(false);
             logSignal(payload, 'blocked', { reason: qtyReason });
             return res.status(200).json({ status: 'blocked', reason: qtyReason });
         }
 
+        // v4 size_multiplier: GO_FULL=1.0, GO_REDUCED=0.5. Honor the verdict at
+        // minimum executable size — never collapse GO_REDUCED → SKIP at qty=1
+        // (matrix has SKIP as a separate verdict). `?? 1` keeps v3 / missing-
+        // field payloads at full size.
+        const sizeMul = Number(size_multiplier);
+        const sizeMulValid = Number.isFinite(sizeMul) && sizeMul > 0;
+        const qty = sizeMulValid ? Math.max(1, Math.floor(baseQty * sizeMul)) : baseQty;
+
         // Freeze the ATM strategy at registration — a mid-trade flip of the
         // dashboard toggle must not change an in-flight trade's exit logic.
         const mode = String(settings.get('atmStrategy') || 'standard').toLowerCase() === 'momentum'
             ? 'momentum' : 'standard';
+
+        // Resolve momentum activation/trail with v4 payload override → env default.
+        // Only meaningful in momentum mode; null otherwise so db has clean signal
+        // of "no per-signal override applied".
+        const isMomentum = mode === 'momentum';
+        const momentumActivation = isMomentum
+            ? (Number(momentum_activation) > 0
+                ? Number(momentum_activation)
+                : (Number(settings.get('momentumActivationPct')) || 0.30))
+            : null;
+        const momentumTrail = isMomentum
+            ? (Number(momentum_trail) > 0
+                ? Number(momentum_trail)
+                : (Number(settings.get('momentumTrailPct')) || 0.75))
+            : null;
 
         // ── Record trade before placing order ───────────────────────────────
         const trade = db.insert({
@@ -208,6 +234,14 @@ function createWebhookRouter() {
             entryHour:       entryHour       ?? null,
             macroTransition: macroTransition ?? null,
             h4ZoneId:        h4ZoneId        ?? null,
+            // v4 fields — frozen here so executor.js + analytics read per-trade
+            momentumActivation,
+            momentumTrail,
+            sizeMultiplier:  sizeMulValid ? sizeMul : null,
+            cellId:          cell_id        ?? null,
+            smtMacroCount:   smt_macro_count ?? null,
+            overshootPts:    overshoot_pts   ?? null,
+            entryZoneSide:   entry_zone_side ?? null,
         });
 
         // ── Place orders ────────────────────────────────────────────────────
