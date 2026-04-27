@@ -14,9 +14,11 @@ const { createDashboardRouter } = require('./dashboard');
 const db         = require('./db');
 const journal    = require('./journal');
 const pnlAudit   = require('./pnlAudit');
+const filteredSignals = require('./filteredSignals');
 
 risk.restorePnlState();
 db.loadFromDisk();
+filteredSignals.rebuildFromDisk();
 
 // One-time journal backfill — if no journal-*.json files exist (first boot
 // after the audit/journal port 2026-04-22), seed from the flat trades.jsonl.

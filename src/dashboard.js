@@ -10,6 +10,7 @@ const monitor   = require('./monitor');
 const contracts = require('./contracts');
 const journal   = require('./journal');
 const pnlAudit  = require('./pnlAudit');
+const filteredSignals = require('./filteredSignals');
 const { fetchAccounts } = require('../scripts/fetchAccounts');
 
 const ACCOUNTS_TTL_MS = 60 * 1000;
@@ -79,6 +80,7 @@ function createDashboardRouter() {
             lastTrade:      todayClosed.length ? todayClosed[todayClosed.length - 1] : null,
             signalsToday,
             signalCounts:   risk.getSignalCounts(),
+            matrixSelectivity: filteredSignals.getCounts(),
             consecutiveLosses: risk.getConsecutiveLosses(),
             circuitBreakerResumeAt: risk.getCircuitBreakerResumeAt(),
             settings:       settings.getAll(),

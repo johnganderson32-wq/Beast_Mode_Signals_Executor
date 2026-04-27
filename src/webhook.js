@@ -124,6 +124,10 @@ function createWebhookRouter() {
         // and risk gates so the per-cell sample for the matrix-vs-live analyzer
         // isn't distorted by BEAST runtime state.
         const filterStatus = payload.filter_status || 'GO';
+        // Increment matrix-selectivity counter for every legitimate Pine decision
+        // (GO + filtered alike). Drives the dashboard's left-pane selectivity
+        // block; reset at trading-day rollover.
+        filteredSignals.incrementCount(filterStatus);
         if (filterStatus !== 'GO') {
             const t = new Date();
             const shortTime = new Intl.DateTimeFormat('en-GB', {

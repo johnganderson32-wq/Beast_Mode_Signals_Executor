@@ -146,6 +146,19 @@
   .streak-line { font-size: 11px; color: var(--muted); margin-top: 6px; }
   .streak-line b { color: var(--yellow); }
 
+  .matrix-block { margin-top: 16px; }
+  .matrix-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; color: var(--muted); padding: 2px 0;
+  }
+  .matrix-row .mr-key { letter-spacing: 0.5px; }
+  .matrix-row .mr-val { color: var(--text); font-weight: bold; font-variant-numeric: tabular-nums; }
+  .matrix-row .mr-pct { color: var(--muted); margin-left: 6px; font-weight: normal; }
+  .matrix-row.mr-go .mr-val { color: var(--green); }
+  .matrix-row.mr-total {
+    border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 6px;
+  }
+
   .btn-flatten {
     margin-top: 20px; width: 100%;
     background: rgba(239,68,68,0.1); border: 1px solid var(--red);
@@ -531,6 +544,16 @@
         <div class="pnl-value pnl-zero" id="daily-pnl">$0.00</div>
         <div class="streak-line">Streak: <b id="streak">0</b> &nbsp;·&nbsp; Signals: <span id="sig-exec">0</span>/<span id="sig-total">0</span></div>
       </div>
+
+      <div class="signal-sep-line"></div>
+      <div class="matrix-block">
+        <div class="pnl-label" style="color:var(--accent)">MATRIX SELECTIVITY</div>
+        <div class="matrix-row mr-go"><span class="mr-key">GO:</span><span><span class="mr-val" id="mx-go">0</span><span class="mr-pct" id="mx-go-pct"></span></span></div>
+        <div class="matrix-row"><span class="mr-key">SKIP:</span><span class="mr-val" id="mx-skip">0</span></div>
+        <div class="matrix-row"><span class="mr-key">PW_0:</span><span class="mr-val" id="mx-pw0">0</span></div>
+        <div class="matrix-row mr-total"><span class="mr-key">TOTAL:</span><span><span class="mr-val" id="mx-total">0</span><span class="mr-pct">signals today</span></span></div>
+      </div>
+
       <button class="btn-flatten" onclick="showFlattenModal()">FLATTEN</button>
     </div>
   </div>
@@ -954,6 +977,15 @@
       var sc = s.signalCounts || {};
       document.getElementById('sig-exec').textContent  = sc.executed || 0;
       document.getElementById('sig-total').textContent = sc.total    || 0;
+
+      // Matrix selectivity (Pine v4.2 filter_status counters)
+      var ms = s.matrixSelectivity || {};
+      document.getElementById('mx-go').textContent    = ms.GO          || 0;
+      document.getElementById('mx-skip').textContent  = ms.MATRIX_SKIP || 0;
+      document.getElementById('mx-pw0').textContent   = ms.PW_SIZE_0   || 0;
+      document.getElementById('mx-total').textContent = ms.total       || 0;
+      var pctEl = document.getElementById('mx-go-pct');
+      pctEl.textContent = (ms.goPct != null) ? ('(' + ms.goPct + '%)') : '';
 
       // Block-reason banner
       renderBlockBanner(s.blockReason || null);

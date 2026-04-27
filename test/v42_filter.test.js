@@ -18,6 +18,7 @@ if (LOG_DIR !== path.resolve(TMP)) {
 
 const express = require('express');
 const { createWebhookRouter } = require('../src/webhook');
+const filteredSignals = require('../src/filteredSignals');
 
 const app = express();
 app.use(express.json());
@@ -129,6 +130,26 @@ const server = app.listen(0, async () => {
             console.log('PASS  filtered_signals.jsonl still has only the 2 filtered rows (no GO/invalid leakage)');
         } else {
             console.error(`FAIL  filtered_signals.jsonl grew unexpectedly to ${filteredAfter.length} rows`); failed++;
+        }
+
+        // 9. Matrix-selectivity counter: 2 GO (legacy + explicit) + 1 SKIP + 1 PW_0;
+        //    invalid (BANANA) rejected at validate so does NOT increment.
+        const counts = filteredSignals.getCounts();
+        if (counts.GO === 2 && counts.MATRIX_SKIP === 1 && counts.PW_SIZE_0 === 1
+            && counts.total === 4 && counts.goPct === 50) {
+            console.log(`PASS  matrix-selectivity counter: GO=2 SKIP=1 PW_0=1 total=4 goPct=50`);
+        } else {
+            console.error(`FAIL  counter mismatch: ${JSON.stringify(counts)}`); failed++;
+        }
+
+        // 10. rebuildFromDisk reconstructs the same counts from signals.jsonl
+        filteredSignals.rebuildFromDisk();
+        const rebuilt = filteredSignals.getCounts();
+        if (rebuilt.GO === counts.GO && rebuilt.MATRIX_SKIP === counts.MATRIX_SKIP
+            && rebuilt.PW_SIZE_0 === counts.PW_SIZE_0) {
+            console.log(`PASS  rebuildFromDisk reconstructs counts identically`);
+        } else {
+            console.error(`FAIL  rebuilt counts diverge: ${JSON.stringify(rebuilt)} vs ${JSON.stringify(counts)}`); failed++;
         }
     } catch (e) {
         console.error('FAIL  test threw:', e.message); failed++;
