@@ -12,10 +12,14 @@ const logStream = require('./log-stream');
 const executor  = require('./executor');
 const journal   = require('./journal');
 const pnlAudit  = require('./pnlAudit');
+const filteredSignals = require('./filteredSignals');
 const { LOG_DIR } = require('./paths');
 
 // Required fields from the BEAST Mode Pine payload
 const REQUIRED = ['instrument', 'direction', 'action', 'setup', 'price', 'stop', 'tp1', 'target'];
+
+// Pine v4.2 filter_status values. Absent on v4.1 / v3 payloads → treat as 'GO'.
+const VALID_FILTER_STATUSES = ['GO', 'MATRIX_SKIP', 'PW_SIZE_0'];
 
 // Max age between Pine bar close and webhook receipt. Past this, the entry
 // edge is gone — reject rather than fill stale. Pine v3+ attaches barCloseMs
@@ -54,6 +58,9 @@ function validate(payload) {
     if (String(payload.setup).toUpperCase()  !== 'BEAST') return `Unsupported setup: ${payload.setup}`;
     if (!['bullish', 'bearish'].includes(String(payload.direction).toLowerCase())) {
         return `Invalid direction: ${payload.direction}`;
+    }
+    if (payload.filter_status != null && !VALID_FILTER_STATUSES.includes(payload.filter_status)) {
+        return `bad_filter_status: ${payload.filter_status}`;
     }
     return null;
 }
@@ -105,6 +112,28 @@ function createWebhookRouter() {
             console.warn(`[webhook] Invalid payload: ${err}`, payload);
             logSignal(payload, 'rejected', { reason: err });
             return res.status(400).json({ error: err });
+        }
+
+        // ── Filter-status branch (Pine v4.2) ────────────────────────────────
+        // Pine v4.2 fires the alert on every bullSig/bearSig regardless of
+        // matrix verdict. filter_status tells us what to do:
+        //   GO          → existing trade path (or absent for v4.1/v3 compat)
+        //   MATRIX_SKIP → log to filtered_signals.jsonl, no order
+        //   PW_SIZE_0   → log to filtered_signals.jsonl, no order
+        // Filtered signals are pure telemetry — they bypass staleness, pnlAudit,
+        // and risk gates so the per-cell sample for the matrix-vs-live analyzer
+        // isn't distorted by BEAST runtime state.
+        const filterStatus = payload.filter_status || 'GO';
+        if (filterStatus !== 'GO') {
+            const t = new Date();
+            const shortTime = new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'America/New_York', hour12: false,
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+            }).format(t);
+            filteredSignals.logFilteredSignal({ payload, filter_status: filterStatus, receivedAt: t.toISOString() });
+            logSignal(payload, 'filtered', { filter_status: filterStatus });
+            console.log(`[FILTERED] ${shortTime} ${payload.instrument} ${payload.direction} | cell=${payload.cell_id || 'unknown'} | filter=${filterStatus}`);
+            return res.status(200).json({ status: 'filtered_logged', filter_status: filterStatus });
         }
 
         // ── Staleness gate ──────────────────────────────────────────────────
